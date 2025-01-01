@@ -27,3 +27,32 @@ coloc.abf_mpfr <- function (dataset1, dataset2, MAF = NULL, p1 = 1e-04, p2 = 1e-
     class(output) <- c("coloc_abf", class(output))
     return(output)
 }
+
+process.dataset_mpfr <- function (d, suffix) 
+{
+    nd <- names(d)
+    if ("beta" %in% nd && "varbeta" %in% nd) {
+        if (d$type == "quant" && !("sdY" %in% nd)) 
+            d$sdY <- sdY.est(d$varbeta, d$MAF, d$N)
+        df <- approx.bf.estimates(z = d$beta/sqrt(d$varbeta), 
+            V = d$varbeta, type = d$type, suffix = suffix, sdY = d$sdY)
+        df$snp <- as.character(d$snp)
+        if ("position" %in% nd) 
+            df <- cbind(df, position = d$position)
+        return(df)
+    }
+    if ("pvalues" %in% nd & "MAF" %in% nd & "N" %in% nd) {
+        df <- data.frame(pvalues = d$pvalues, MAF = d$MAF, N = d$N, 
+            snp = as.character(d$snp))
+        snp.index <- which(colnames(df) == "snp")
+        colnames(df)[-snp.index] <- paste(colnames(df)[-snp.index], 
+            suffix, sep = ".")
+        abf <- approx.bf.p(p = df$pvalues, f = df$MAF, type = d$type, 
+            N = df$N, s = d$s, suffix = suffix)
+        df <- cbind(df, abf)
+        if ("position" %in% nd) 
+            df <- cbind(df, position = d$position)
+        return(df)
+    }
+    stop("Must give, as a minimum, one of:\n(beta, varbeta, type, sdY)\n(beta, varbeta, type, MAF)\n(pvalues, MAF, N, type)")
+}
