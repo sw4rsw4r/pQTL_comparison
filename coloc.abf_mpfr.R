@@ -5,8 +5,8 @@ coloc.abf_mpfr <- function (dataset1, dataset2, MAF = NULL, p1 = 1e-04, p2 = 1e-
         dataset2$MAF <- MAF
     check_dataset(d = dataset1, 1)
     check_dataset(d = dataset2, 2)
-    df1 <- process.dataset(d = dataset1, suffix = "df1")
-    df2 <- process.dataset(d = dataset2, suffix = "df2")
+    df1 <- process.dataset_mpfr(d = dataset1, suffix = "df1")
+    df2 <- process.dataset_mpfr(d = dataset2, suffix = "df2")
     p1 = adjust_prior(p1, nrow(df1), "1")
     p2 = adjust_prior(p2, nrow(df2), "2")
     merged.df <- merge(df1, df2)
