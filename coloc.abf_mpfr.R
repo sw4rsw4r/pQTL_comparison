@@ -42,12 +42,12 @@ process.dataset_mpfr <- function (d, suffix)
         return(df)
     }
     if ("pvalues" %in% nd & "MAF" %in% nd & "N" %in% nd) {
-        df <- data.frame(pvalues = d$pvalues, MAF = d$MAF, N = d$N, 
+        df <- list(pvalues = d$pvalues, MAF = d$MAF, N = d$N,
             snp = as.character(d$snp))
-        snp.index <- which(colnames(df) == "snp")
-        colnames(df)[-snp.index] <- paste(colnames(df)[-snp.index], 
+        snp.index <- which(names(df) == "snp")
+        names(df)[-snp.index] <- paste(names(df)[-snp.index],
             suffix, sep = ".")
-        abf <- approx.bf.p(p = df$pvalues, f = df$MAF, type = d$type, 
+        abf <- approx.bf.p_mpfr(p = df$pvalues, f = df$MAF, type = d$type,
             N = df$N, s = d$s, suffix = suffix)
         df <- cbind(df, abf)
         if ("position" %in% nd) 
@@ -55,4 +55,29 @@ process.dataset_mpfr <- function (d, suffix)
         return(df)
     }
     stop("Must give, as a minimum, one of:\n(beta, varbeta, type, sdY)\n(beta, varbeta, type, MAF)\n(pvalues, MAF, N, type)")
+}
+
+
+# https://rdrr.io/cran/coloc/src/R/claudia.R#sym-approx.bf.p
+approx.bf.p_mpfr <- function(p,f,type, N, s, suffix=NULL) {
+    if(type=="quant") {
+        sd.prior <- 0.15
+        V <- Var.data(f, N)
+    } else {
+        sd.prior <- 0.2
+        V <- Var.data.cc(f, N, s)
+    }
+    z <- qnorm(0.5 * p, lower.tail = FALSE)
+    ## Shrinkage factor: ratio of the prior variance to the total variance
+    r <- sd.prior^2 / (sd.prior^2 + V)
+    ## Approximate BF  # I want ln scale to compare in log natural scale with LR diff
+    lABF = 0.5 * (log(1-r) + (r * z^2))
+    ret <- data.frame(V,z,r,lABF)
+    if(!is.null(suffix))
+        colnames(ret) <- paste(colnames(ret), suffix, sep=".")
+    return(ret)
+}
+
+Var.data <- function(f, N) {
+    1 / (2 * N * f * (1 - f))
 }
