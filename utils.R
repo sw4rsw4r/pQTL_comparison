@@ -342,7 +342,7 @@ load_CASE1 <- function(gene_of_interest, risk_factor, data_dir, window_size, dat
     se,
     varbeta,
     snp,
-    ID = paste0("chr", seqnames, "_", end, "_", other, "_", effect),
+    ID = paste0(seqnames, "_", end, "_", other, "_", effect),
     effect,
     other,
     chrom = sub("chr", "", seqnames),
