@@ -536,6 +536,7 @@ load_ld_mat_UKBB <- function(gene_of_interest, window_size, rsids_to_keep, dir_o
     }
 
     ld_meta_filt <- subset(ld_meta, snp %in% rsids_to_keep)
+    ld_meta_filt <- ld_meta_filt[!duplicated(ld_meta_filt$snp), ]
     mat_filt <- as.matrix(mat[ld_meta_filt$idx, ld_meta_filt$idx])
     mat_t <- t(mat_filt)
     lower_tri <- lower.tri(mat_filt, diag = T)
@@ -636,7 +637,8 @@ harmonize <- function(runID, gene_of_interest, window_size, lst_data, LD_type, d
   names_outcome <- names(lst_data$outcome)
   fname_harmonize <- file.path(dir_output, "harmonize", "harmonize.RDS")
 
-  if (file.exists(fname_harmonize)) {
+  # if (file.exists(fname_harmonize)) {
+  if (F) {
     res <- readRDS(fname_harmonize)
   } else {
     check_dir(dirname(fname_harmonize))
