@@ -1,0 +1,467 @@
+---
+title: "pQTL_comparison"
+author: "Seongwon Hwang"
+date: "22-11-2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(warnings = -1)
+```
+
+# Load packages and functions
+```{r}
+# Installed the following packages by runing:
+# > conda env create -f env.yml
+# > conda activate pQTL_comparison
+
+suppressMessages(library(dplyr))
+suppressMessages(library(vroom))
+suppressMessages(library(rtracklayer))
+suppressMessages(library(reticulate))
+suppressMessages(library(ggplot2))
+suppressMessages(library(reshape2))
+suppressMessages(library(curl))
+suppressMessages(library(MendelianRandomization))
+suppressMessages(library(coloc))
+suppressMessages(library(susieR))
+suppressMessages(library(Rsamtools))
+suppressMessages(library(stringr))
+
+
+# devtools::install_github("ash-res/prop-coloc")
+suppressMessages(library(prop.coloc))
+# install.packages("colocPropTest", dependencies = T)
+suppressMessages(library(colocPropTest))
+# devtools::install_github("kassambara/easyGgplot2")
+suppressMessages(library(easyGgplot2))
+# install.packages("synapser", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
+# suppressMessages(library(synapser))
+# install.packages("synapserutils", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
+# suppressMessages(library(synapserutils))
+
+source("PCA-LIML-function.R")
+source("summary_mvMR_BF.R")
+source("summary_mvMR_SSS.R")
+source("utils.R")
+```
+
+## Download data
+```{r}
+probe_olink <- "data/FinnGen/pQTL/Olink/probe_map.tsv"
+probe_somascan <- "data/FinnGen/pQTL/Somascan/probe_map.tsv"
+
+df_probe_olink <- read.delim(probe_olink)
+df_probe_somascan <- read.delim(probe_somascan)
+
+merged <- merge(df_probe_olink, df_probe_somascan, by = c("geneName", "chr", "start", "end", "chr2"))
+merged <- merged[!duplicated(merged$geneName), ]
+list_genes <- merged$geneName
+
+window_size <- 50000
+```
+
+## Load summary data
+```{r}
+check_dir("data/RData/CASE1/")
+data_dir <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/UKBB/CASE1"
+list_files_case1 <- sub("_group1.afreq", "", list.files(path = data_dir, pattern = "_group1.afreq"))
+names_risk_factor <- c("group1", "group2")
+
+for (gene_of_interest in list_files_case1) {
+  filepath_gwas_processed <- paste0("data/RData/CASE1/", gene_of_interest, "_window_", window_size, "_processed.RDS")
+  file_g1 <- paste0(data_dir, "/", gene_of_interest, "_group1.afreq")
+  file_g2 <- paste0(data_dir, "/", gene_of_interest, "_group2.afreq")
+  if (!file.exists(file_g1) || !file.exists(file_g2)) next
+
+  if (!file.exists(filepath_gwas_processed)) {
+  lst_data_subset <- list()
+
+  for (risk_factor in names_risk_factor) {
+    lst_data_subset[[risk_factor]] <- load_CASE1(gene_of_interest, risk_factor, data_dir, window_size)
+  }
+  saveRDS(lst_data_subset, file = filepath_gwas_processed)
+  }
+}
+```
+
+## Load summary data
+```{r}
+names_risk_factor <- c("Somascan", "Olink")
+check_dir("data/RData/FinnGen/")
+data_dir <- "data/FinnGen/pQTL/downloaded/"
+for (gene_of_interest in list_genes) {
+  filepath_gwas_processed <- paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS")
+
+  if (!file.exists(filepath_gwas_processed)) {
+    lst_data_subset <- list()
+
+    for (risk_factor in names_risk_factor) {
+      lst_data_subset[[risk_factor]] <- load_pQTL_Finngen(gene_of_interest, risk_factor, data_dir, window_size)
+    }
+    saveRDS(lst_data_subset, file = filepath_gwas_processed)
+  }
+}
+```
+
+# Download ukbiobank summary statistics
+```{r}
+# download rsID mapping files
+synLogin(authToken = "eyJ0eXAiOiJKV1QiLCJraWQiOiJXN05OOldMSlQ6SjVSSzpMN1RMOlQ3TDc6M1ZYNjpKRU9VOjY0NFI6VTNJWDo1S1oyOjdaQ0s6RlBUSCIsImFsZyI6IlJTMjU2In0.eyJhY2Nlc3MiOnsic2NvcGUiOlsidmlldyIsImRvd25sb2FkIl0sIm9pZGNfY2xhaW1zIjp7fX0sInRva2VuX3R5cGUiOiJQRVJTT05BTF9BQ0NFU1NfVE9LRU4iLCJpc3MiOiJodHRwczovL3JlcG8tcHJvZC5wcm9kLnNhZ2ViYXNlLm9yZy9hdXRoL3YxIiwiYXVkIjoiMCIsIm5iZiI6MTczODI3NDI1MywiaWF0IjoxNzM4Mjc0MjUzLCJqdGkiOiIxNTk5NyIsInN1YiI6IjM0OTEwNjgifQ.g-jXRdPbiZJ3zhUEeM07_roLfs24oOlzwoQz_5crFq2WQCCh0yUr1yVidUnBl0pVdmDX2qc2tKweobDd5b3RiUl1br-ILesXv0YbfKcuHbZDZWU6UFpoEGEmhTaWPCl1YIrUFOXWA5ezP2bA5E_Iom2IFdpfm1ZhDjINBWW4LjVHk2gT_hiH5Odf7U1fD3ejeolA6j8b2gzyYHrL-rCPnyB7UH34EOEeq2he5c7Z-qSB13qKuywA83FQYXczAyJa_TxX96eBkNM2yNem_cLAkddud8PHAk6qLKXRoooBw16PUj636evTX1A5Rvor4dI8aB27WxDABwmM7V1jZaLl0w")
+# synapserutils::syncFromSynapse("syn51396727", path = "data/UKBB/Metadata/SNP_RSID_maps")
+
+# download summarystatistics
+files_gen <- synGetChildren("syn51365303")
+files_list <- as.list(files_gen)
+files_df <- data.frame(
+  id = sapply(files_list, function(x) x$id),
+  name = sapply(files_list, function(x) x$name),
+  type = sapply(files_list, function(x) x$type)
+) %>%
+  mutate(genename = sub("_.*", "", name)) %>%
+  filter(genename %in% list_genes, !duplicated(genename))
+
+for (idx in 1:nrow(files_df)) {
+  gene_of_interest <- files_df[idx, "genename"]
+
+  filepath_gwas_processed <- paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS")
+  check_dir(dirname(filepath_gwas_processed))
+  if (!file.exists(filepath_gwas_processed)) {
+    target_id <- files_df[idx, "id"]
+    filename_tar <- files_df[idx, "name"]
+
+    res <- load_pQTL_UKBB(target_id, filename_tar, gene_of_interest, window_size)
+
+    lst_data_subset <- list()
+    lst_data_subset[["Olink"]] <- res
+    saveRDS(lst_data_subset, file = filepath_gwas_processed)
+  }
+}
+```
+
+```{r}
+# # https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
+# MHC <- list(
+#   CHR = 6,
+#   start = 28510120,
+#   end = 33480577
+# )
+# genes_in_MHC <- genes_Xchr <- NULL
+# for (gene_of_interest in files_df$genename) {
+#   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+#   if (region$CHR == MHC$CHR && region$locus_lower > MHC$start && region$locus_upper < MHC$end) genes_in_MHC <- c(genes_in_MHC, gene_of_interest)
+#   if (region$CHR == "X") genes_Xchr <- c(genes_Xchr, gene_of_interest)
+# }
+# filtered_genes <- setdiff(files_df$genename, genes_in_MHC)
+# filtered_genes <- setdiff(filtered_genes, genes_Xchr)
+
+# pval_cutoff <- 1e-08
+# filt_FinnGen1 <- filt_FinnGen2 <- filt_UKBB <- filt_all <- NULL
+# for (gene_of_interest in filtered_genes) {
+#   list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+#   list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+#   list_data_subset <- c(list_data_FinnGen, list_data_UKBB)
+
+#   filt_FinnGen1 <- c(filt_FinnGen1, nrow(subset(list_data_FinnGen[["Somascan"]], pval < pval_cutoff)) > 0)
+#   filt_FinnGen2 <- c(filt_FinnGen2, nrow(subset(list_data_FinnGen[["Olink"]], pval < pval_cutoff)) > 0)
+#   filt_UKBB <- c(filt_UKBB, nrow(subset(list_data_UKBB[["Olink"]], pval < pval_cutoff)) > 0)
+#   filt_all <- c(filt_all, p_value_filtering(list_data_subset, pval_cutoff))
+# }
+# df_genes <- data.frame(genename = filtered_genes, filt_FinnGen1, filt_FinnGen2, filt_UKBB, group1 = filt_all, group2 = (!filt_FinnGen1 & !filt_FinnGen2), group3 = ((filt_FinnGen1 | filt_FinnGen2) & !filt_all), group4 = (filt_FinnGen1 | filt_FinnGen2))
+# write.table(df_genes, "gene_list.txt", quote = F, col.names = T, row.names = F, sep = "\t")
+
+filtered_genes <- read.delim("gene_list.txt")$genename
+filtered_g1 <- subset(read.delim("gene_list.txt"), group1)$genename
+filtered_g2 <- subset(read.delim("gene_list.txt"), group2)$genename
+filtered_g3 <- subset(read.delim("gene_list.txt"), group3)$genename
+filtered_g4 <- subset(read.delim("gene_list.txt"), group4)$genename
+```
+
+
+## Run Proportional colocalization analysis for all possible pairs
+# CASE2
+```{r}
+runID <- "CASE1"
+names_risk_factor <- c("group1", "group2")
+data_dir <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/UKBB/CASE1"
+# idx = 61, 69, 75, 82, 91, 93, 111, 114, 138 err - duplicated snps found
+for (idx in 145:length(list_files_case1)) {
+  gene_of_interest <- list_files_case1[idx]
+  print(gene_of_interest)
+  dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
+
+  filepath_gwas_processed <- paste0("data/RData/CASE1/", gene_of_interest, "_window_", window_size, "_processed.RDS")
+  lst_data_subset <- readRDS(filepath_gwas_processed)
+
+  lst_data <- list(
+    risk_factors = sapply(names_risk_factor, function(x) lst_data_subset[[x]], simplify = F),
+    outcome = NULL
+  )
+  res <- harmonize(
+    runID = runID,
+    gene_of_interest, window_size,
+    lst_data,
+    LD_type = "UKBB",
+    dir_output = dir_results
+  )
+  # Run Proportional colocalization analysis
+  run_colocProp(res, dir_results)
+  run_coloc(res, dir_results)
+  run_susie(res, dir_results)
+  run_propcoloc_Wallace(res, dir_results)
+}
+```
+
+## Run Proportional colocalization analysis for all possible pairs
+# CASE2
+```{r}
+runID <- "CASE2"
+# idx 528, 1062 error - no SNPs left in read_tabix step - when I checked 5 random SNPs, they didn't appear in dbSNP database.
+# idx 553, 852, 1318 error - REF and ALT in the UKBBrsIDmap file are complementary, causing mismatches in allele matching in read_tabix() -> Fixed
+for (idx in 1:length(filtered_genes)) {
+  gene_of_interest <- filtered_genes[idx]
+  print(gene_of_interest)
+  dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
+
+  filepath_gwas_processed <- paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS")
+  lst_data_subset <- readRDS(filepath_gwas_processed)
+
+  lst_data <- list(
+    risk_factors = sapply(names_risk_factor, function(x) lst_data_subset[[x]], simplify = F),
+    outcome = NULL
+  )
+  res <- harmonize(
+    runID = runID,
+    gene_of_interest, window_size,
+    lst_data,
+    LD_type = "FinnGen",
+    dir_output = dir_results
+  )
+
+  # Run Proportional colocalization analysis
+  run_colocProp(res, dir_results)
+  run_coloc(res, dir_results)
+  run_susie(res, dir_results)
+  run_propcoloc_Wallace(res, dir_results)
+}
+```
+
+# CASE3
+```{r}
+runID <- "CASE3"
+# idx 71, 145, 151 ... - chrX - LD is missing
+# idx 209 -???
+# idx 468, 469 -???
+# for (gene_of_interest in filtered_g4) {
+for (idx in 470:length(filtered_g4)) {
+  gene_of_interest <- filtered_g4[idx]
+
+  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+  if (region$CHR == "X") next # chrX is missing in UKBB-LD
+
+  dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
+
+  list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+  list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+
+  lst_data <- list(
+    risk_factors = list(
+      FinnGen = list_data_FinnGen[["Olink"]],
+      UKBB = list_data_UKBB[["Olink"]]
+    ),
+    outcome = NULL
+  )
+  res <- harmonize(
+    runID = runID,
+    gene_of_interest, window_size,
+    lst_data,
+    LD_type = c("FinnGen", "UKBB"),
+    dir_output = dir_results
+  )
+
+  # Run Proportional colocalization analysis
+  run_coloc(res, dir_results)
+  run_susie(res, dir_results)
+
+  LD_UKBB <- res[["UKBB"]]$LD
+  LD_FinnGen <- res[["FinnGen"]]$LD
+
+  runID0 <- "CASE3_FinnGenLD"
+  dir_results0 <- file.path("results", runID0, paste0("window_", window_size), gene_of_interest)
+  res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_FinnGen
+  run_coloc(res, dir_results)
+  run_colocProp(res, dir_results0)
+  run_propcoloc_Wallace(res, dir_results0)
+  run_susie(res, dir_results0)
+
+  runID0 <- "CASE3_UKBBLD"
+  dir_results0 <- file.path("results", runID0, paste0("window_", window_size), gene_of_interest)
+  res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_UKBB
+  run_coloc(res, dir_results)
+  run_colocProp(res, dir_results0)
+  run_propcoloc_Wallace(res, dir_results0)
+  run_susie(res, dir_results0)
+}
+```
+
+
+# CASE4
+```{r}
+runID <- "CASE4"
+for (gene_of_interest in filtered_genes) {
+  dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
+
+  list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+  list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+
+  lst_data <- list(
+    risk_factors = list(
+      FinnGen = list_data_FinnGen[["Somascan"]],
+      UKBB = list_data_UKBB[["Olink"]]
+    ),
+    outcome = NULL
+  )
+  res <- harmonize(
+    runID = runID,
+    gene_of_interest, window_size,
+    lst_data,
+    LD_type = c("FinnGen", "UKBB"),
+    dir_output = dir_results
+  )
+
+  # Run Proportional colocalization analysis
+  run_coloc(res, dir_results)
+  run_susie(res, dir_results)
+
+  LD_UKBB <- res[["UKBB"]]$LD
+  LD_FinnGen <- res[["FinnGen"]]$LD
+
+  runID0 <- "CASE4_FinnGenLD"
+  dir_results0 <- file.path("results", runID0, paste0("window_", window_size), gene_of_interest)
+  res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_FinnGen
+  run_colocProp(res, dir_results0)
+  run_propcoloc_Wallace(res, dir_results0)
+  run_susie(res, dir_results0)
+
+  runID0 <- "CASE4_UKBBLD"
+  dir_results0 <- file.path("results", runID0, paste0("window_", window_size), gene_of_interest)
+  res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_UKBB
+  run_colocProp(res, dir_results0)
+  run_propcoloc_Wallace(res, dir_results0)
+  run_susie(res, dir_results0)
+}
+```
+
+```{r}
+CASE1 <- get_all_results("CASE1", c("group1", "group2"), window_size)
+CASE1 <- CASE1[apply(is.na(CASE1),1,sum)!=9,]
+CASE2 <- get_all_results("CASE2", c("Somascan", "Olink"), window_size)
+CASE3 <- get_all_results("CASE3", c("FinnGen", "UKBB"), window_size)
+CASE3_LD1 <- get_all_results("CASE3_FinnGenLD", c("FinnGen", "UKBB"), window_size)
+CASE3_LD2 <- get_all_results("CASE3_UKBBLD", c("FinnGen", "UKBB"), window_size)
+```
+
+```{r}
+CASE_filt <- subset(CASE1, gene %in% filtered_g4)
+print_summary_tab(CASE_filt)
+print_summary_tab(CASE_filt, print_percent = T)
+
+CASE_filt <- subset(CASE2, gene %in% filtered_g4)
+print_summary_tab(CASE_filt)
+print_summary_tab(CASE_filt, print_percent = T)
+
+merged = merge(CASE3_LD1[, setdiff(colnames(CASE3_LD1), "g_coloc_H4")], CASE3[, c("gene", "g_coloc_H4")], by='gene')
+CASE_filt <- subset(merged, gene %in% filtered_g4)
+print_summary_tab(CASE_filt)
+print_summary_tab(CASE_filt, print_percent = T)
+
+merged = merge(CASE3_LD2[, setdiff(colnames(CASE3_LD2), "g_coloc_H4")], CASE3[, c("gene", "g_coloc_H4")], by='gene')
+CASE_filt <- subset(merged, gene %in% filtered_g4)
+print_summary_tab(CASE_filt)
+print_summary_tab(CASE_filt, print_percent = T)
+
+
+
+CASE3_filt <- subset(CASE3, gene %in% filtered_g1)
+prop.table(table(is.na(CASE3_filt$g_coloc_H4)))
+prop.table(table(is.na(CASE3_filt$g_susie_H4)))
+prop.table(table(is.na(CASE3_filt$g_p_cond)))
+prop.table(table(is.na(CASE3_filt$g_FDR)))
+
+
+sum(!is.na(CASE2_filt$coloc_H4) & CASE2_filt$coloc_H4 > .5) / nrow(CASE2_filt)
+sum(!is.na(CASE2_filt$coloc_H4) & CASE2_filt$coloc_H4 > .5) / sum(!is.na(CASE2_filt$coloc_H4))
+
+sum(!is.na(CASE3$susie_H4) & CASE3$susie_H4 > .5) / nrow(CASE3)
+sum(!is.na(CASE3$susie_H4) & CASE3$susie_H4 > .5) / sum(!is.na(CASE3$susie_H4))
+
+sum(!is.na(CASE2_filt$p_cond) & CASE2_filt$p_cond >= 0.05) / nrow(CASE2_filt)
+sum(!is.na(CASE2_filt$p_cond) & CASE2_filt$p_cond >= 0.05) / sum(!is.na(CASE2_filt$p_cond))
+
+sum(!is.na(CASE2_filt$fdr) & CASE2_filt$fdr >= 0.05) / nrow(CASE2_filt)
+sum(!is.na(CASE2_filt$fdr) & CASE2_filt$fdr >= 0.05) / sum(!is.na(CASE2_filt$fdr))
+
+
+with(CASE3_LD1, round(prop.table(table(g_coloc_H4, g_susie_H4, useNA = "always")), 2))
+with(CASE3_LD1, round(prop.table(table(g_coloc_H4, g_p_cond, useNA = "always")), 2))
+with(CASE3_LD1, round(prop.table(table(g_coloc_H4, g_FDR, useNA = "always")), 2))
+
+with(CASE3_LD1, round(prop.table(table(g_susie_H4, g_coloc_H4, useNA = "always")), 2))
+with(CASE3_LD1, round(prop.table(table(g_susie_H4, g_p_cond, useNA = "always")), 2))
+with(CASE3_LD1, round(prop.table(table(g_susie_H4, g_FDR, useNA = "always")), 2))
+
+with(CASE3_LD1, round(prop.table(table(g_p_cond, g_coloc_H4, useNA = "always")), 2))
+with(CASE3_LD1, round(prop.table(table(g_p_cond, g_susie_H4, useNA = "always")), 2))
+with(CASE3_LD1, round(prop.table(table(g_p_cond, g_FDR, useNA = "always")), 2))
+
+with(CASE3_LD1, round(prop.table(table(g_FDR, g_coloc_H4, useNA = "always")), 2))
+with(CASE3_LD1, round(prop.table(table(g_FDR, g_susie_H4, useNA = "always")), 2))
+with(CASE3_LD1, round(prop.table(table(g_FDR, g_p_cond, useNA = "always")), 2))
+
+
+CASE3_filt <- subset(CASE3_LD1, gene %in% filtered_g1)
+sum(!is.na(CASE3_filt$coloc_H4) & CASE3_filt$coloc_H4 > .5) / nrow(CASE3_filt)
+sum(!is.na(CASE3_filt$coloc_H4) & CASE3_filt$coloc_H4 > .5) / sum(!is.na(CASE3_filt$coloc_H4))
+
+sum(!is.na(CASE3_filt$susie_H4) & CASE3_filt$susie_H4 > .5) / nrow(CASE3_filt)
+sum(!is.na(CASE3_filt$susie_H4) & CASE3_filt$susie_H4 > .5) / sum(!is.na(CASE3_filt$susie_H4))
+
+sum(!is.na(CASE3_filt$p_cond) & CASE3_filt$p_cond >= 0.05) / nrow(CASE3_filt)
+sum(!is.na(CASE3_filt$p_cond) & CASE3_filt$p_cond >= 0.05) / sum(!is.na(CASE3_filt$p_cond))
+
+sum(!is.na(CASE3_filt$fdr) & CASE3_filt$fdr >= 0.05) / nrow(CASE3_filt)
+sum(!is.na(CASE3_filt$fdr) & CASE3_filt$fdr >= 0.05) / sum(!is.na(CASE3_filt$fdr))
+
+
+merged = merge(CASE3, CASE3_LD1, by='gene')
+corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method="spearman"),3))
+ggplot(merged, aes(x = susie_H4.x, y = susie_H4.y)) +
+    geom_point(alpha=.2) +
+    theme_minimal(base_size = 16) +
+    theme(text = element_text(face = "bold")) +
+    xlab("LD_both") + ylab("LD_FinnGen") +
+    ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
+with(merged, table(ifelse(susie_H4.x <= .5, "not", ">0.5"), ifelse(susie_H4.y <= .5, "not", ">0.5")))
+
+merged = merge(CASE3, CASE3_LD2, by='gene')
+corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method="spearman"),3))
+ggplot(merged, aes(x = susie_H4.x, y = susie_H4.y)) +
+    geom_point(alpha=.2) +
+    theme_minimal(base_size = 16) +
+    theme(text = element_text(face = "bold")) +
+    xlab("LD_both") + ylab("LD_UKBB") +
+    ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
+with(merged, table(ifelse(susie_H4.x <= .5, "not", ">0.5"), ifelse(susie_H4.y <= .5, "not", ">0.5")))
+
+merged = merge(CASE3_LD1, CASE3_LD2, by='gene')
+corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method="spearman"),3))
+ggplot(merged, aes(x = susie_H4.x, y = susie_H4.y)) +
+    geom_point(alpha=.2) +
+    theme_minimal(base_size = 16) +
+    theme(text = element_text(face = "bold")) +
+    xlab("LD_FinnGen") + ylab("LD_UKBB") +
+    ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
+with(merged, table(ifelse(susie_H4.x <= .5,
+ "not", ">0.5"), ifelse(susie_H4.y <= .5, "not", ">0.5")))
+```
