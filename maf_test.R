@@ -20,3 +20,4 @@ final_df <- bind_rows(result_list, .id = "varid")
 merged <- merge(obj[[1]], final_df, by.x = "position", by.y = "pos")
 
 with(merged, plot(ifelse(effect_AF < .5, effect_AF, 1 - effect_AF), ifelse(AF < .5, AF, 1 - AF), main = "A1BG", xlab = "MAF", ylab = "gnomAD (NFE, Non-Finnish European)"))
+with(merged, plot(effect_AF, AF, main = "A1BG", xlab = "MAF", ylab = "gnomAD (NFE, Non-Finnish European)"))
