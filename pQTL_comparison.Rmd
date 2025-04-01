@@ -40,6 +40,8 @@ suppressMessages(library(easyGgplot2))
 # suppressMessages(library(synapser))
 # install.packages("synapserutils", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
 # suppressMessages(library(synapserutils))
+# remotes::install_github("daynefiler/gnomadR")
+library(gnomadR)
 
 source("PCA-LIML-function.R")
 source("summary_mvMR_BF.R")
@@ -76,12 +78,12 @@ for (gene_of_interest in list_files_case1) {
   if (!file.exists(file_g1) || !file.exists(file_g2)) next
 
   if (!file.exists(filepath_gwas_processed)) {
-  lst_data_subset <- list()
+    lst_data_subset <- list()
 
-  for (risk_factor in names_risk_factor) {
-    lst_data_subset[[risk_factor]] <- load_CASE1(gene_of_interest, risk_factor, data_dir, window_size)
-  }
-  saveRDS(lst_data_subset, file = filepath_gwas_processed)
+    for (risk_factor in names_risk_factor) {
+      lst_data_subset[[risk_factor]] <- load_CASE1(gene_of_interest, risk_factor, data_dir, window_size)
+    }
+    saveRDS(lst_data_subset, file = filepath_gwas_processed)
   }
 }
 ```
@@ -140,6 +142,37 @@ for (idx in 1:nrow(files_df)) {
 }
 ```
 
+
+```{r}
+check_dir("data/RData/EGA/")
+# data_dir <- "/home/sh2041/rds/rds-mrc-bsu-csoP2nj6Y6Y/meta_filtered"
+df_EGA_studies <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
+df_EGA_studies <- df_EGA_studies %>%
+  mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait)) %>%
+  filter(genename %in% intersect(list_genes, files_df$genename)) %>%
+  filter(!duplicated(genename))
+
+for (idx in 1:nrow(df_EGA_studies)) {
+  gene_of_interest <- df_EGA_studies[idx, "genename"]
+  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+  if (region$CHR == "X") next
+  accessionId <- df_EGA_studies[idx, "accessionId"]
+  addr <- df_EGA_studies[idx, "summaryStatistics"]
+  filepath <- paste0(addr, "/harmonised/", accessionId, ".h.tsv.gz")
+
+  filepath_gwas_processed <- paste0("data/RData/EGA/", gene_of_interest, "_window_", window_size, "_processed.RDS")
+
+  if (!file.exists(filepath_gwas_processed)) {
+    lst_data_subset <- list()
+
+    lst_data_subset[["Somascan"]] <- load_pQTL_EGA(gene_of_interest, filepath, window_size)
+    if (!is.null(lst_data_subset[["Somascan"]])) saveRDS(lst_data_subset, file = filepath_gwas_processed)
+  }
+}
+```
+
+
+
 ```{r}
 # # https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
 # MHC <- list(
@@ -178,15 +211,14 @@ filtered_g3 <- subset(read.delim("gene_list.txt"), group3)$genename
 filtered_g4 <- subset(read.delim("gene_list.txt"), group4)$genename
 ```
 
-
 ## Run Proportional colocalization analysis for all possible pairs
 # CASE2
 ```{r}
 runID <- "CASE1"
 names_risk_factor <- c("group1", "group2")
 data_dir <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/UKBB/CASE1"
-# idx = 61, 69, 75, 82, 91, 93, 111, 114, 138 err - duplicated snps found
-for (idx in 145:length(list_files_case1)) {
+
+for (idx in 1:length(list_files_case1)) {
   gene_of_interest <- list_files_case1[idx]
   print(gene_of_interest)
   dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
@@ -355,7 +387,7 @@ for (gene_of_interest in filtered_genes) {
 
 ```{r}
 CASE1 <- get_all_results("CASE1", c("group1", "group2"), window_size)
-CASE1 <- CASE1[apply(is.na(CASE1),1,sum)!=9,]
+CASE1 <- CASE1[apply(is.na(CASE1), 1, sum) != 9, ]
 CASE2 <- get_all_results("CASE2", c("Somascan", "Olink"), window_size)
 CASE3 <- get_all_results("CASE3", c("FinnGen", "UKBB"), window_size)
 CASE3_LD1 <- get_all_results("CASE3_FinnGenLD", c("FinnGen", "UKBB"), window_size)
@@ -371,12 +403,12 @@ CASE_filt <- subset(CASE2, gene %in% filtered_g4)
 print_summary_tab(CASE_filt)
 print_summary_tab(CASE_filt, print_percent = T)
 
-merged = merge(CASE3_LD1[, setdiff(colnames(CASE3_LD1), "g_coloc_H4")], CASE3[, c("gene", "g_coloc_H4")], by='gene')
+merged <- merge(CASE3_LD1[, setdiff(colnames(CASE3_LD1), "g_coloc_H4")], CASE3[, c("gene", "g_coloc_H4")], by = "gene")
 CASE_filt <- subset(merged, gene %in% filtered_g4)
 print_summary_tab(CASE_filt)
 print_summary_tab(CASE_filt, print_percent = T)
 
-merged = merge(CASE3_LD2[, setdiff(colnames(CASE3_LD2), "g_coloc_H4")], CASE3[, c("gene", "g_coloc_H4")], by='gene')
+merged <- merge(CASE3_LD2[, setdiff(colnames(CASE3_LD2), "g_coloc_H4")], CASE3[, c("gene", "g_coloc_H4")], by = "gene")
 CASE_filt <- subset(merged, gene %in% filtered_g4)
 print_summary_tab(CASE_filt)
 print_summary_tab(CASE_filt, print_percent = T)
@@ -434,34 +466,38 @@ sum(!is.na(CASE3_filt$fdr) & CASE3_filt$fdr >= 0.05) / nrow(CASE3_filt)
 sum(!is.na(CASE3_filt$fdr) & CASE3_filt$fdr >= 0.05) / sum(!is.na(CASE3_filt$fdr))
 
 
-merged = merge(CASE3, CASE3_LD1, by='gene')
-corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method="spearman"),3))
+merged <- merge(CASE3, CASE3_LD1, by = "gene")
+corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method = "spearman"), 3))
 ggplot(merged, aes(x = susie_H4.x, y = susie_H4.y)) +
-    geom_point(alpha=.2) +
-    theme_minimal(base_size = 16) +
-    theme(text = element_text(face = "bold")) +
-    xlab("LD_both") + ylab("LD_FinnGen") +
-    ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
+  geom_point(alpha = .2) +
+  theme_minimal(base_size = 16) +
+  theme(text = element_text(face = "bold")) +
+  xlab("LD_both") +
+  ylab("LD_FinnGen") +
+  ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
 with(merged, table(ifelse(susie_H4.x <= .5, "not", ">0.5"), ifelse(susie_H4.y <= .5, "not", ">0.5")))
 
-merged = merge(CASE3, CASE3_LD2, by='gene')
-corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method="spearman"),3))
+merged <- merge(CASE3, CASE3_LD2, by = "gene")
+corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method = "spearman"), 3))
 ggplot(merged, aes(x = susie_H4.x, y = susie_H4.y)) +
-    geom_point(alpha=.2) +
-    theme_minimal(base_size = 16) +
-    theme(text = element_text(face = "bold")) +
-    xlab("LD_both") + ylab("LD_UKBB") +
-    ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
+  geom_point(alpha = .2) +
+  theme_minimal(base_size = 16) +
+  theme(text = element_text(face = "bold")) +
+  xlab("LD_both") +
+  ylab("LD_UKBB") +
+  ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
 with(merged, table(ifelse(susie_H4.x <= .5, "not", ">0.5"), ifelse(susie_H4.y <= .5, "not", ">0.5")))
 
-merged = merge(CASE3_LD1, CASE3_LD2, by='gene')
-corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method="spearman"),3))
+merged <- merge(CASE3_LD1, CASE3_LD2, by = "gene")
+corr <- with(merged, round(cor(susie_H4.x, susie_H4.y, use = "complete.obs", method = "spearman"), 3))
 ggplot(merged, aes(x = susie_H4.x, y = susie_H4.y)) +
-    geom_point(alpha=.2) +
-    theme_minimal(base_size = 16) +
-    theme(text = element_text(face = "bold")) +
-    xlab("LD_FinnGen") + ylab("LD_UKBB") +
-    ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
+  geom_point(alpha = .2) +
+  theme_minimal(base_size = 16) +
+  theme(text = element_text(face = "bold")) +
+  xlab("LD_FinnGen") +
+  ylab("LD_UKBB") +
+  ggtitle("CASE3", subtitle = paste("Susie H4 (spearman corr :", corr, ")"))
 with(merged, table(ifelse(susie_H4.x <= .5,
- "not", ">0.5"), ifelse(susie_H4.y <= .5, "not", ">0.5")))
+  "not", ">0.5"
+), ifelse(susie_H4.y <= .5, "not", ">0.5")))
 ```

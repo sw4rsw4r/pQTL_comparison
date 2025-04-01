@@ -192,7 +192,6 @@ download_files_FinnGen <- function(gene_of_interest, risk_factor) {
   system(cmd2)
 }
 
-
 get_rsID_info <- function(region) {
   # filepath_dbSNP <- "https://ftp.ncbi.nih.gov/snp/organisms/human_9606/VCF/common_all_20180418.vcf.gz"
   filepath_dbSNP <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/dbSNP/common_all_20180418.vcf.gz"
@@ -274,7 +273,7 @@ delete_files <- function(filepath) {
 }
 
 load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, window_size, data_type = "quant", case_prop = NA) {
-  filepath <- paste0("data/FinnGen/pQTL/downloaded/", risk_factor, "_", gene_of_interest, ".txt.gz")
+  filepath <- paste0(data_dir, "/", risk_factor, "_", gene_of_interest, ".txt.gz")
   if (!file.exists(filepath)) download_files_FinnGen(gene_of_interest, risk_factor)
 
   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
@@ -417,6 +416,110 @@ load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, window_siz
   unlink(dirname(selected), recursive = T)
   return(res_final)
 }
+
+get_variant_data_with_retry <- function(batch, genomes = "GRCh38", max_retries = 5, wait_time = 5) {
+  retries <- 0
+  
+  while (retries < max_retries) {
+    tryCatch({
+      batch_result <- getVariantPopData(varids = batch, genomes = genomes)
+      batch_result <- Filter(Negate(is.null), batch_result)
+      if (length(batch_result) ==0 ) return(NULL)
+      if (is.data.frame(batch_result[[1]])) {
+        return(batch_result)
+      } else {
+        stop('Retry')
+      }
+    }, error = function(e) {
+      if (grepl("Retry", e$message)) {
+        retries <- retries + 1
+        message(sprintf("Retrying in %d seconds... (Attempt %d/%d)", wait_time, retries, max_retries))
+        Sys.sleep(wait_time)
+      } else {
+        stop(e)
+      }
+    })
+  }
+  stop("Failed after maximum retries")
+}
+
+add_AF <- function(res) {
+  snp_list <- res %>%
+    mutate(varid = paste0(chrom, "-", as.integer(position), "-", other, "-", effect)) %>%
+    pull(varid)
+
+  batch_size <- 10
+  snp_batches <- split(snp_list, ceiling(seq_along(snp_list) / batch_size))
+
+  result_list <- list()
+  for (batch in snp_batches) {
+    batch_result <- get_variant_data_with_retry(batch)
+    temp <- lapply(batch_result, function(df) {
+      if (is.null(df)) {
+        return(data.frame())
+      } else {
+        return(with(subset(df, id == "nfe"), data.frame(varid, chrom, pos, AF = ac / an)))
+      }
+    })
+    result_list <- c(result_list, temp)
+  }
+  final_df <- bind_rows(result_list, .id = "varid")
+  final_df$varid <- NULL
+  res$effect_AF <- NULL
+  colnames(final_df) <- c("chrom", "position", "effect_AF")
+  merged <- merge(res, final_df, by = c("chrom", "position"))
+  return(merged)
+}
+
+
+load_pQTL_EGA <- function(gene_of_interest, filepath, window_size, data_type = "quant", case_prop = NA) {
+  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+  filename <- paste0("data/EGA/", gene_of_interest, ".txt")
+  if (!file.exists(filename)) {
+    cmd <- paste0("wget ", filepath, " -O ", filename)
+    system(cmd)
+  }
+
+  df_pQTL <- vroom::vroom(filename, delim = "\t") %>%
+    filter(
+      chromosome == region$CHR,
+      base_pair_location > region$locus_lower,
+      base_pair_location < region$locus_upper
+    )
+  if (nrow(df_pQTL)== 0) return(NULL)
+
+  cols_reqd <- c("beta", "standard_error", "variant_id", "effect_allele", "other_allele", "chromosome", "base_pair_location", "effect_allele_frequency", "p_value", "log(P)")
+
+  if (all(cols_reqd %in% names(df_pQTL))) {
+    df_pQTL_subset <- df_pQTL[, cols_reqd]
+    if (all(is.na(df_pQTL$variant_id))) df_pQTL_subset$variant_id <- df_pQTL$rsid
+
+    res <- with(df_pQTL_subset, dplyr::tibble(
+      beta = beta,
+      se = standard_error,
+      varbeta = standard_error^2,
+      snp = variant_id,
+      ID = paste0(chromosome, "_", base_pair_location),
+      effect = toupper(effect_allele),
+      other = toupper(other_allele),
+      chrom = chromosome,
+      position = base_pair_location,
+      effect_AF = effect_allele_frequency,
+      type = data_type,
+      s = case_prop,
+      pval = p_value,
+      nlog10P = `log(P)`,
+      nsample = 3301,
+    ))
+  } else {
+    stop("stop")
+  }
+  file.remove(filename)
+  if (all(is.na(res$effect_AF))) res <- add_AF(res)
+  if (sum(sapply(res, function(x) all(is.na(x)))) > 1) stop("stop")
+  return(res)
+}
+
 
 load_liftOver_hg38ToHg19 <- function() {
   filepath_liftOver <- "data/liftOver/hg38ToHg19.over.chain"
