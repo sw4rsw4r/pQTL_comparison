@@ -517,7 +517,13 @@ load_pQTL_EGA <- function(gene_of_interest, filepath, window_size, data_type = "
   file.remove(filename)
   if (all(is.na(res$effect_AF))) res <- add_AF(res)
   if (sum(sapply(res, function(x) all(is.na(x)))) > 1) stop("stop")
-  return(res)
+
+  # remove duplicated rsIDs
+  res_sorted <- res[order(abs(res$beta), decreasing = T), ]
+  res_filt <- res_sorted[!duplicated(res_sorted$snp), ]
+  res_final <- res_filt[order(res_filt$position), ]
+
+  return(res_final)
 }
 
 
@@ -885,6 +891,8 @@ run_coloc <- function(res, dir_results) {
   # }
   res[[RF1]]$MAF <- with(res[[RF1]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
   res[[RF2]]$MAF <- with(res[[RF2]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
+  res[[RF1]]$MAF <- with(res[[RF1]], ifelse(MAF == 0, 1/res[[RF1]]$N, MAF))
+  res[[RF2]]$MAF <- with(res[[RF2]], ifelse(MAF == 0, 1/res[[RF2]]$N, MAF))
 
   # estimated_sdY <- with(res[[RF1]], sqrt(varbeta * (N * 2 * MAF * (1 - MAF))))
   # print(estimated_sdY)
