@@ -419,26 +419,31 @@ load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, window_siz
 
 get_variant_data_with_retry <- function(batch, genomes = "GRCh38", max_retries = 5, wait_time = 5) {
   retries <- 0
-  
+
   while (retries < max_retries) {
-    tryCatch({
-      batch_result <- getVariantPopData(varids = batch, genomes = genomes)
-      batch_result <- Filter(Negate(is.null), batch_result)
-      if (length(batch_result) ==0 ) return(NULL)
-      if (is.data.frame(batch_result[[1]])) {
-        return(batch_result)
-      } else {
-        stop('Retry')
+    tryCatch(
+      {
+        batch_result <- getVariantPopData(varids = batch, genomes = genomes)
+        batch_result <- Filter(Negate(is.null), batch_result)
+        if (length(batch_result) == 0) {
+          return(NULL)
+        }
+        if (is.data.frame(batch_result[[1]])) {
+          return(batch_result)
+        } else {
+          stop("Retry")
+        }
+      },
+      error = function(e) {
+        if (grepl("Retry", e$message)) {
+          retries <- retries + 1
+          message(sprintf("Retrying in %d seconds... (Attempt %d/%d)", wait_time, retries, max_retries))
+          Sys.sleep(wait_time)
+        } else {
+          stop(e)
+        }
       }
-    }, error = function(e) {
-      if (grepl("Retry", e$message)) {
-        retries <- retries + 1
-        message(sprintf("Retrying in %d seconds... (Attempt %d/%d)", wait_time, retries, max_retries))
-        Sys.sleep(wait_time)
-      } else {
-        stop(e)
-      }
-    })
+    )
   }
   stop("Failed after maximum retries")
 }
@@ -486,7 +491,9 @@ load_pQTL_EGA <- function(gene_of_interest, filepath, window_size, data_type = "
       base_pair_location > region$locus_lower,
       base_pair_location < region$locus_upper
     )
-  if (nrow(df_pQTL)== 0) return(NULL)
+  if (nrow(df_pQTL) == 0) {
+    return(NULL)
+  }
 
   cols_reqd <- c("beta", "standard_error", "variant_id", "effect_allele", "other_allele", "chromosome", "base_pair_location", "effect_allele_frequency", "p_value", "log(P)")
 
@@ -499,7 +506,7 @@ load_pQTL_EGA <- function(gene_of_interest, filepath, window_size, data_type = "
       se = standard_error,
       varbeta = standard_error^2,
       snp = variant_id,
-      ID = paste0(chromosome, "_", base_pair_location),
+      ID = paste0("chr", chromosome, "_", base_pair_location, "_", toupper(other_allele), "_", toupper(effect_allele)),
       effect = toupper(effect_allele),
       other = toupper(other_allele),
       chrom = chromosome,
@@ -689,6 +696,10 @@ load_ld_mat_FinnGen <- function(gene_of_interest, window_size, IDs_to_keep, dir_
       )
     if (region$CHR == "X") IDs_to_keep <- gsub("chr23", "chrX", IDs_to_keep)
     IDs_final <- Reduce(intersect, list(df_LD$ID1, df_LD$ID2, IDs_to_keep))
+    if (length(IDs_final) == 0) {
+      IDs_to_keep <- sapply(strsplit(IDs_to_keep, "_"), function(x) paste0(x[1], "_", x[2], "_", x[4], "_", x[3]))
+      IDs_final <- Reduce(intersect, list(df_LD$ID1, df_LD$ID2, IDs_to_keep))
+    }
     df_LD_filt <- df_LD %>% dplyr::filter(ID1 %in% IDs_final, ID2 %in% IDs_final)
 
     df_UKBBrsIDmap <- vroom(paste0("data/UKBB/Metadata/SNP_RSID_maps/olink_rsid_map_mac5_info03_b0_7_chr", region$CHR, "_patched_v2.tsv.gz")) %>%
@@ -746,8 +757,7 @@ harmonize <- function(runID, gene_of_interest, window_size, lst_data, LD_type, d
   names_outcome <- names(lst_data$outcome)
   fname_harmonize <- file.path(dir_output, "harmonize", "harmonize.RDS")
 
-  # if (file.exists(fname_harmonize)) {
-  if (F) {
+  if (file.exists(fname_harmonize)) {
     res <- readRDS(fname_harmonize)
   } else {
     check_dir(dirname(fname_harmonize))
@@ -817,7 +827,7 @@ harmonize <- function(runID, gene_of_interest, window_size, lst_data, LD_type, d
       res[[id]] <- as.list(res[[id]][match(ld_merged$snp, res[[id]]$snp), ])
       res[[id]]$type <- setdiff(unique(res[[id]]$type), NA)
       res[[id]]$N <- mean(res[[id]]$nsample)
-      res[[id]]$LD <- list_LD[[id]]
+      res[[id]]$LD <- list_LD[[ifelse(id == "EGA", "UKBB", id)]]
       if (all(is.na(res[[id]]$s))) {
         res[[id]]$s <- NULL
       } else {
@@ -844,39 +854,59 @@ run_colocProp <- function(res, dir_results, this_prune = 0.4, this_J = 10) {
   #   return()
   # }
 
-  prop.coloc.res <- NULL
-  n_try <- 0
-  while (is.null(prop.coloc.res)) {
-    prop.coloc.res <- tryCatch(
-      {
-        prop.coloc::prop.coloc(
-          b1 = res[[RF1]]$beta, se1 = res[[RF1]]$se, b2 = res[[RF2]]$beta, se2 = res[[RF2]]$se,
-          n = c(res[[RF1]]$N, res[[RF2]]$N),
-          ld = res[[RF1]]$LD, figs = TRUE, traits = c(RF1, RF2),
-          prune = this_prune, J = this_J
-        )
-      },
-      error = function(e) {
-        return(NULL)
-      }
-    )
-    if (is.null(prop.coloc.res) & n_try == 0) {
-      this_prune <- 0.2
-      this_J <- 5
-      n_try <- n_try + 1
-    } else if (is.null(prop.coloc.res) & n_try == 1) {
-      prop.coloc.res <- list(p_full = NA, p_cond = NA, LM_full = NA, LM_cond = NA)
-    }
-  }
-  prop.coloc.res$J <- this_J
-  prop.coloc.res$prune <- this_prune
-  prop.coloc.res$rsIDs <- res[[1]]$snp
+  # prop.coloc.res <- NULL
+  # n_try <- 0
+  # while (is.null(prop.coloc.res)) {
+  #   prop.coloc.res <- tryCatch(
+  #     {
+  #       prop.coloc::prop.coloc(
+  #         b1 = res[[RF1]]$beta, se1 = res[[RF1]]$se, b2 = res[[RF2]]$beta, se2 = res[[RF2]]$se,
+  #         n = c(res[[RF1]]$N, res[[RF2]]$N),
+  #         ld = res[[RF1]]$LD, figs = TRUE, traits = c(RF1, RF2),
+  #         prune = this_prune, J = this_J
+  #       )
+  #     },
+  #     error = function(e) {
+  #       return(NULL)
+  #     }
+  #   )
+  #   if (is.null(prop.coloc.res) & n_try == 0) {
+  #     this_prune <- 0.2
+  #     this_J <- 5
+  #     n_try <- n_try + 1
+  #   } else if (is.null(prop.coloc.res) & n_try == 1) {
+  #     prop.coloc.res <- list(p_full = NA, p_cond = NA, LM_full = NA, LM_cond = NA)
+  #   }
+  # }
 
-  saveRDS(prop.coloc.res, file = fname_prop.coloc.res1)
-  write.table(as.data.frame(prop.coloc.res[sapply(prop.coloc.res, length) == 1]),
-    fname_prop.coloc.res2,
-    quote = F, row.names = F, col.names = T, sep = "\t"
+
+  prop.coloc.res <- tryCatch(
+    {
+      prop.coloc::prop.coloc(
+        b1 = res[[RF1]]$beta, se1 = res[[RF1]]$se, b2 = res[[RF2]]$beta, se2 = res[[RF2]]$se,
+        n = c(res[[RF1]]$N, res[[RF2]]$N),
+        ld = res[[RF1]]$LD, figs = F, traits = c(RF1, RF2),
+        prune = this_prune, J = this_J
+      )
+    },
+    error = function(cond) {
+      writeLines(capture.output(cond), paste0(fname_prop.coloc.res2, "_err"))
+      return(cond)
+    }
   )
+  if (any(class(prop.coloc.res) == "error")) {
+    return()
+  }
+
+  # prop.coloc.res$J <- this_J
+  # prop.coloc.res$prune <- this_prune
+  # prop.coloc.res$rsIDs <- res[[1]]$snp
+
+  # saveRDS(prop.coloc.res, file = fname_prop.coloc.res1)
+  # write.table(as.data.frame(prop.coloc.res[sapply(prop.coloc.res, length) == 1]),
+  #   fname_prop.coloc.res2,
+  #   quote = F, row.names = F, col.names = T, sep = "\t"
+  # )
 }
 
 
@@ -891,8 +921,8 @@ run_coloc <- function(res, dir_results) {
   # }
   res[[RF1]]$MAF <- with(res[[RF1]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
   res[[RF2]]$MAF <- with(res[[RF2]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
-  res[[RF1]]$MAF <- with(res[[RF1]], ifelse(MAF == 0, 1/res[[RF1]]$N, MAF))
-  res[[RF2]]$MAF <- with(res[[RF2]], ifelse(MAF == 0, 1/res[[RF2]]$N, MAF))
+  res[[RF1]]$MAF <- with(res[[RF1]], ifelse(MAF == 0, 1 / res[[RF1]]$N, MAF))
+  res[[RF2]]$MAF <- with(res[[RF2]], ifelse(MAF == 0, 1 / res[[RF2]]$N, MAF))
 
   # estimated_sdY <- with(res[[RF1]], sqrt(varbeta * (N * 2 * MAF * (1 - MAF))))
   # print(estimated_sdY)
@@ -922,6 +952,8 @@ run_susie <- function(res, dir_results) {
   # }
   res[[RF1]]$MAF <- with(res[[RF1]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
   res[[RF2]]$MAF <- with(res[[RF2]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
+  res[[RF1]]$MAF <- with(res[[RF1]], ifelse(MAF == 0, 1 / res[[RF1]]$N, MAF))
+  res[[RF2]]$MAF <- with(res[[RF2]], ifelse(MAF == 0, 1 / res[[RF2]]$N, MAF))
 
   selected <- c("beta", "varbeta", "position", "MAF", "snp", "type", "N", "LD")
   dat1 <- res[[RF1]][selected]
@@ -930,27 +962,32 @@ run_susie <- function(res, dir_results) {
   dat1$Z <- with(dat1, beta / sqrt(varbeta))
   dat2$Z <- with(dat2, beta / sqrt(varbeta))
 
-  susie.res <- NULL
-  tryCatch(
+  susie.res <- tryCatch(
     {
       out <- coloc::coloc.susie(dat1, dat2)
-      susie.res <- out$summary
+      if (is.null(out$summary) || is.null(out$summary$PP.H4.abf)) {
+        stop("No result")
+      }
+      out
     },
-    error = function(cond) cond
+    error = function(cond) {
+      writeLines(capture.output(cond), paste0(fname_output1, "_err"))
+      return(cond)
+    }
   )
-  if (is.null(susie.res)) {
+  if (any(class(susie.res) == "error")) {
     return()
   }
-  susie.res$ori_nsnps <- length(dat1$snp)
+  susie.res$summary$ori_nsnps <- length(dat1$snp)
 
-  write.table(susie.res,
+  write.table(susie.res$summary,
     fname_output1,
     quote = F, row.names = F, col.names = T, sep = "\t"
   )
   # pdf(fname_output2, width = 8, height = 5)
   # sensitivity(out, "H3 > 0.5 & H4 < 0.5", row = 1, dataset1 = dat1, dataset2 = dat2)
   # dev.off()
-  return(susie.res)
+  return(susie.res$summary)
 }
 
 
@@ -977,13 +1014,13 @@ get_propcoloc_res <- function(dir_results, list_factors) {
   RF2 <- list_factors[2]
 
   fname_propcoloc <- file.path(dir_results, "propcoloc", "prop.coloc.RDS")
-  res_propcoloc <- NULL
+  res_propcoloc <- "insufficient"
   if (file.exists(fname_propcoloc)) {
-    df_tmp <- readRDS(fname_propcoloc)
-    this_p_cond <- ifelse(df_tmp$p_cond == F, 1, df_tmp$p_cond)
-    res_propcoloc <- with(
-      df_tmp,
-      data.frame(RF1 = RF1, RF2 = RF2, p_full, p_cond = this_p_cond, LM_full, LM_cond)
+    df_temp <- readRDS(fname_propcoloc)
+    p_het <- ifelse(is.factor(df_temp$p_cond) & df_temp$p_cond == F, 1, df_temp$p_cond)
+    p_slope <- ifelse(is.factor(df_temp$LM_cond) & df_temp$LM_cond == F, 1, df_temp$LM_cond)
+    res_propcoloc <- ifelse(is.na(p_slope) | p_slope > 0.05, "insufficient",
+      ifelse(p_het > 0.05, "coloc", "non_coloc")
     )
   }
 
@@ -997,11 +1034,21 @@ get_susie_res <- function(dir_results, list_factors) {
   RF2 <- list_factors[2]
 
   fname_susie <- file.path(dir_results, "susie", "susie.txt")
-  res_susie <- NULL
+  res_susie <- "insufficient"
   if (file.exists(fname_susie)) {
-    res_susie <- with(
+    res_temp <- with(
       read.delim(fname_susie),
-      data.frame(RF1, RF2, nsnps, H0 = PP.H0.abf, H1 = PP.H1.abf, H2 = PP.H2.abf, H3 = PP.H3.abf, H4 = PP.H4.abf)
+      data.frame(RF1, RF2,
+        H0 = PP.H0.abf,
+        H1 = PP.H1.abf,
+        H2 = PP.H2.abf,
+        H3 = PP.H3.abf,
+        H4 = PP.H4.abf
+      )
+    )
+
+    res_susie <- ifelse(any(res_temp$H4 >= 0.5), "coloc",
+      ifelse(all(res_temp$H4 < 0.5) && any(res_temp$H3 >= 0.5), "non_coloc", "insufficient")
     )
   }
   return(res_susie)
@@ -1011,25 +1058,26 @@ get_coloc_res <- function(dir_results, list_factors) {
   RF1 <- list_factors[1]
   RF2 <- list_factors[2]
   fname_coloc <- file.path(dir_results, "coloc", "coloc.txt")
-  res_coloc <- NULL
+  res_coloc <- "insufficient"
   if (file.exists(fname_coloc)) {
     res_coloc <- with(
       as.data.frame(t(read.delim(fname_coloc))),
-      data.frame(RF1 = RF1, RF2 = RF2, nsnps, H0 = PP.H0.abf, H1 = PP.H1.abf, H2 = PP.H2.abf, H3 = PP.H3.abf, H4 = PP.H4.abf)
+      ifelse(PP.H4.abf >= 0.5, "coloc", ifelse(PP.H3.abf >= 0.5, "non_coloc", "insufficient"))
     )
   }
   return(res_coloc)
 }
 
 get_colocPropTest_res <- function(dir_results, list_factors) {
-  res_colocPropTest <- NULL
+  res_colocPropTest <- "insufficient"
   RF1 <- list_factors[1]
   RF2 <- list_factors[2]
 
   fname_wallace <- file.path(dir_results, "propcoloc_Wallace", "propcoloc_Wallace.txt")
   if (file.exists(fname_wallace) && file.info(fname_wallace)$size > 1) {
     df1 <- read.delim(fname_wallace)
-    res_colocPropTest <- data.frame(RF1 = RF1, RF2 = RF2, min_p = min(df1$p), min_fdr = min(df1$fdr))
+    res_temp <- data.frame(RF1 = RF1, RF2 = RF2, min_p = min(df1$p), min_fdr = min(df1$fdr))
+    res_colocPropTest <- ifelse(res_temp$min_fdr > 0.05, "coloc", "non_coloc")
   }
   return(res_colocPropTest)
 }
@@ -1040,27 +1088,31 @@ get_all_results <- function(runID, names_risk_factor, window_size) {
   merged <- NULL
   for (gene_of_interest in lst) {
     dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
-    df_propcoloc <- get_propcoloc_res(dir_results, names_risk_factor)
-    df_susie <- get_susie_res(dir_results, names_risk_factor)
-    df_coloc <- get_coloc_res(dir_results, names_risk_factor)
-    df_wallace <- get_colocPropTest_res(dir_results, names_risk_factor)
+    res_propcoloc <- get_propcoloc_res(dir_results, names_risk_factor)
+    res_susie <- get_susie_res(dir_results, names_risk_factor)
+    res_coloc <- get_coloc_res(dir_results, names_risk_factor)
+    res_wallace <- get_colocPropTest_res(dir_results, names_risk_factor)
 
     merged <- rbind(merged, data.frame(
       gene = gene_of_interest,
-      p_cond = ifelse(is.null(df_propcoloc$p_cond), NA, df_propcoloc$p_cond),
-      LM_cond = ifelse(is.null(df_propcoloc$LM_cond), NA, df_propcoloc$LM_cond),
-      coloc_H4 = ifelse(is.null(df_coloc$H4), NA, df_coloc$H4),
-      susie_H4 = ifelse(is.null(df_susie$H4), NA, max(df_susie$H4)),
-      fdr = ifelse(is.null(df_wallace$min_fdr), NA, df_wallace$min_fdr)
+      propcoloc = res_propcoloc,
+      coloc = res_coloc,
+      susie = res_susie,
+      wallace = res_wallace
     ))
   }
-  merged <- merged %>% mutate(
-    g_coloc_H4 = factor(ifelse(coloc_H4 <= .5, "not", ">0.5"), levels = c("not", ">0.5")),
-    g_susie_H4 = factor(ifelse(susie_H4 <= .5, "not", ">0.5"), levels = c("not", ">0.5")),
-    g_p_cond = factor(ifelse(p_cond < .05, "sig", "not"), levels = c("not", "sig")),
-    g_FDR = factor(ifelse(fdr < .05, "sig", "not"), levels = c("not", "sig"))
-  )
-  return(merged)
+  # summary_coloc <- t(data.frame(table(factor(merged$coloc, levels = c("coloc", "non_coloc", "insufficient")))))[2, , drop = F]
+  # summary_susie <- t(data.frame(table(factor(merged$susie, levels = c("coloc", "non_coloc", "insufficient")))))[2, , drop = F]
+  # summary_propcoloc <- t(data.frame(table(factor(merged$propcoloc, levels = c("coloc", "non_coloc", "insufficient")))))[2, , drop = F]
+  # summary_wallace <- t(data.frame(table(factor(merged$wallace, levels = c("coloc", "non_coloc", "insufficient")))))[2, , drop = F]
+
+  summary_coloc <- t(data.frame(prop.table(table(factor(merged$coloc, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
+  summary_susie <- t(data.frame(prop.table(table(factor(merged$susie, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
+  summary_propcoloc <- t(data.frame(prop.table(table(factor(merged$propcoloc, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
+  summary_wallace <- t(data.frame(prop.table(table(factor(merged$wallace, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
+  summary_combined <- Reduce("cbind", list(summary_coloc, summary_susie, summary_propcoloc, summary_wallace))
+  summary_combined <- data.frame(runID, summary_combined)
+  return(summary_combined)
 }
 
 
@@ -1105,4 +1157,24 @@ print_summary_tab <- function(CASE_filt, print_percent = F) {
     print(with(subset(CASE_filt, LM_cond <= .05), table(g_FDR, g_p_cond, useNA = "always")))
     print(with(subset(CASE_filt, LM_cond > .05), table(g_FDR, g_p_cond, useNA = "always")))
   }
+}
+
+
+load_data <- function(gene_of_interest, window_size) {
+  list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+  list_data_EGA <- readRDS(paste0("data/RData/EGA/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+  list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+
+  snps_common <- Reduce("intersect", list(
+    list_data_UKBB$Olink$snp,
+    list_data_EGA$Somascan$snp,
+    list_data_FinnGen$Olink$snp,
+    list_data_FinnGen$Somascan$snp
+  ))
+
+  UKB_o <- list_data_UKBB$Olink %>% filter(snp %in% snps_common)
+  EGA_s <- list_data_EGA$Somascan %>% filter(snp %in% snps_common)
+  Fin_o <- list_data_FinnGen$Olink %>% filter(snp %in% snps_common)
+  Fin_s <- list_data_FinnGen$Somascan %>% filter(snp %in% snps_common)
+  return(list(UKB_o = UKB_o, EGA_s = EGA_s, Fin_o = Fin_o, Fin_s = Fin_s))
 }

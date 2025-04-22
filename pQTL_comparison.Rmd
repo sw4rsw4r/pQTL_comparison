@@ -148,11 +148,13 @@ check_dir("data/RData/EGA/")
 # data_dir <- "/home/sh2041/rds/rds-mrc-bsu-csoP2nj6Y6Y/meta_filtered"
 df_EGA_studies <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
 df_EGA_studies <- df_EGA_studies %>%
-  mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait)) %>%
+  mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait))
+
+df_EGA_subset <- df_EGA_studies %>%
   filter(genename %in% intersect(list_genes, files_df$genename)) %>%
   filter(!duplicated(genename))
 
-for (idx in 1:nrow(df_EGA_studies)) {
+for (idx in 1:nrow(df_EGA_subset)) {
   gene_of_interest <- df_EGA_studies[idx, "genename"]
   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
   if (region$CHR == "X") next
@@ -171,52 +173,72 @@ for (idx in 1:nrow(df_EGA_studies)) {
 }
 ```
 
-
-
 ```{r}
-# # https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
-# MHC <- list(
-#   CHR = 6,
-#   start = 28510120,
-#   end = 33480577
-# )
-# genes_in_MHC <- genes_Xchr <- NULL
-# for (gene_of_interest in files_df$genename) {
-#   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
-#   if (region$CHR == MHC$CHR && region$locus_lower > MHC$start && region$locus_upper < MHC$end) genes_in_MHC <- c(genes_in_MHC, gene_of_interest)
-#   if (region$CHR == "X") genes_Xchr <- c(genes_Xchr, gene_of_interest)
-# }
-# filtered_genes <- setdiff(files_df$genename, genes_in_MHC)
-# filtered_genes <- setdiff(filtered_genes, genes_Xchr)
+# https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
+df_EGA_studies <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
+df_EGA_studies <- df_EGA_studies %>%
+  mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait))
+files_df <- read.delim("files_df.txt")
+genes_FinnGen <- list_genes
+genes_UKBB_olink <- files_df$genename
+genes_UKBB_somascan <- unique(df_EGA_studies$genename)
+genes_common <- Reduce(intersect, list(genes_UKBB_olink, genes_UKBB_somascan, genes_FinnGen))
 
-# pval_cutoff <- 1e-08
-# filt_FinnGen1 <- filt_FinnGen2 <- filt_UKBB <- filt_all <- NULL
-# for (gene_of_interest in filtered_genes) {
-#   list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
-#   list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
-#   list_data_subset <- c(list_data_FinnGen, list_data_UKBB)
+MHC <- list(
+  CHR = 6,
+  start = 28510120,
+  end = 33480577
+)
+genes_in_MHC <- genes_Xchr <- NULL
+for (gene_of_interest in genes_common) {
+  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+  if (region$CHR == MHC$CHR && region$locus_lower > MHC$start && region$locus_upper < MHC$end) genes_in_MHC <- c(genes_in_MHC, gene_of_interest)
+  if (region$CHR == "X") genes_Xchr <- c(genes_Xchr, gene_of_interest)
+}
+filtered_genes <- setdiff(genes_common, genes_in_MHC)
+filtered_genes <- setdiff(filtered_genes, genes_Xchr)
 
-#   filt_FinnGen1 <- c(filt_FinnGen1, nrow(subset(list_data_FinnGen[["Somascan"]], pval < pval_cutoff)) > 0)
-#   filt_FinnGen2 <- c(filt_FinnGen2, nrow(subset(list_data_FinnGen[["Olink"]], pval < pval_cutoff)) > 0)
-#   filt_UKBB <- c(filt_UKBB, nrow(subset(list_data_UKBB[["Olink"]], pval < pval_cutoff)) > 0)
-#   filt_all <- c(filt_all, p_value_filtering(list_data_subset, pval_cutoff))
-# }
-# df_genes <- data.frame(genename = filtered_genes, filt_FinnGen1, filt_FinnGen2, filt_UKBB, group1 = filt_all, group2 = (!filt_FinnGen1 & !filt_FinnGen2), group3 = ((filt_FinnGen1 | filt_FinnGen2) & !filt_all), group4 = (filt_FinnGen1 | filt_FinnGen2))
-# write.table(df_genes, "gene_list.txt", quote = F, col.names = T, row.names = F, sep = "\t")
+pval_cutoff <- 1e-08
+filt_FinnGen_soma <- filt_FinnGen_olink <- filt_UKBB_olink <- filt_EGA_soma <- NULL
+for (gene_of_interest in filtered_genes) {
+  list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+  list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
 
-filtered_genes <- read.delim("gene_list.txt")$genename
-filtered_g1 <- subset(read.delim("gene_list.txt"), group1)$genename
-filtered_g2 <- subset(read.delim("gene_list.txt"), group2)$genename
-filtered_g3 <- subset(read.delim("gene_list.txt"), group3)$genename
-filtered_g4 <- subset(read.delim("gene_list.txt"), group4)$genename
+  if (gene_of_interest == "TYRO3") {
+    filt_EGA_soma <- c(filt_EGA_soma, F)
+  } else {
+    list_data_EGA <- readRDS(paste0("data/RData/EGA/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+    filt_EGA_soma <- c(filt_EGA_soma, nrow(subset(list_data_EGA[["Somascan"]], pval < pval_cutoff)) > 0)
+  }
+  list_data_subset <- c(list_data_FinnGen, list_data_UKBB, list_data_EGA)
+
+  filt_FinnGen_soma <- c(filt_FinnGen_soma, nrow(subset(list_data_FinnGen[["Somascan"]], pval < pval_cutoff)) > 0)
+  filt_FinnGen_olink <- c(filt_FinnGen_olink, nrow(subset(list_data_FinnGen[["Olink"]], pval < pval_cutoff)) > 0)
+  filt_UKBB_olink <- c(filt_UKBB_olink, nrow(subset(list_data_UKBB[["Olink"]], pval < pval_cutoff)) > 0)
+
+  # filt_all <- c(filt_all, p_value_filtering(list_data_subset, pval_cutoff))
+}
+df_genes <- data.frame(
+  filt_FinnGen_soma,
+  filt_FinnGen_olink,
+  filt_UKBB_olink,
+  filt_EGA_soma
+)
+rownames(df_genes) <- filtered_genes
+write.table(df_genes, "gene_list.txt", quote = F, col.names = T, row.names = T, sep = "\t")
+
+df_genes <- read.delim("gene_list.txt")
+# filtered_g1 <- subset(read.delim("gene_list.txt"), group1)
+# filtered_g2 <- subset(read.delim("gene_list.txt"), group2)
+# filtered_g3 <- subset(read.delim("gene_list.txt"), group3)
+# filtered_g4 <- subset(read.delim("gene_list.txt"), group4)
+filtered_g5 <- rownames(df_genes[apply(df_genes, 1, sum) == 4, ])
 ```
 
 ## Run Proportional colocalization analysis for all possible pairs
-# CASE2
 ```{r}
 runID <- "CASE1"
 names_risk_factor <- c("group1", "group2")
-data_dir <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/UKBB/CASE1"
 
 for (idx in 1:length(list_files_case1)) {
   gene_of_interest <- list_files_case1[idx]
@@ -248,19 +270,20 @@ for (idx in 1:length(list_files_case1)) {
 ## Run Proportional colocalization analysis for all possible pairs
 # CASE2
 ```{r}
-runID <- "CASE2"
-# idx 528, 1062 error - no SNPs left in read_tabix step - when I checked 5 random SNPs, they didn't appear in dbSNP database.
-# idx 553, 852, 1318 error - REF and ALT in the UKBBrsIDmap file are complementary, causing mismatches in allele matching in read_tabix() -> Fixed
-for (idx in 1:length(filtered_genes)) {
-  gene_of_interest <- filtered_genes[idx]
+runID <- "CASE2F"
+names_risk_factor <- c("Somascan", "Olink")
+for (idx in 1:length(filtered_g5)) {
+  gene_of_interest <- filtered_g5[idx]
   print(gene_of_interest)
   dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
 
-  filepath_gwas_processed <- paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS")
-  lst_data_subset <- readRDS(filepath_gwas_processed)
+  data_summary <- load_data(gene_of_interest, window_size)
 
   lst_data <- list(
-    risk_factors = sapply(names_risk_factor, function(x) lst_data_subset[[x]], simplify = F),
+    risk_factors = list(
+      Olink = data_summary$Fin_o,
+      Somascan = data_summary$Fin_s
+    ),
     outcome = NULL
   )
   res <- harmonize(
@@ -279,28 +302,55 @@ for (idx in 1:length(filtered_genes)) {
 }
 ```
 
-# CASE3
+## Run Proportional colocalization analysis for all possible pairs
+# CASE2
 ```{r}
-runID <- "CASE3"
-# idx 71, 145, 151 ... - chrX - LD is missing
-# idx 209 -???
-# idx 468, 469 -???
-# for (gene_of_interest in filtered_g4) {
-for (idx in 470:length(filtered_g4)) {
-  gene_of_interest <- filtered_g4[idx]
+runID <- "CASE2U"
 
-  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
-  if (region$CHR == "X") next # chrX is missing in UKBB-LD
-
+for (idx in 1:length(filtered_g5)) {
+  gene_of_interest <- filtered_g5[idx]
+  print(gene_of_interest)
   dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
 
-  list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
-  list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+  data_summary <- load_data(gene_of_interest, window_size)
 
   lst_data <- list(
     risk_factors = list(
-      FinnGen = list_data_FinnGen[["Olink"]],
-      UKBB = list_data_UKBB[["Olink"]]
+      Olink = data_summary$UKB_o,
+      Somascan = data_summary$EGA_s
+    ),
+    outcome = NULL
+  )
+  res <- harmonize(
+    runID = runID,
+    gene_of_interest, window_size,
+    lst_data,
+    LD_type = "UKBB",
+    dir_output = dir_results
+  )
+
+  # Run Proportional colocalization analysis
+  run_colocProp(res, dir_results)
+  run_coloc(res, dir_results)
+  run_susie(res, dir_results)
+  run_propcoloc_Wallace(res, dir_results)
+}
+```
+
+# CASE3
+```{r}
+runID <- "CASE3o"
+for (idx in 1:length(filtered_g5)) {
+  gene_of_interest <- filtered_g5[idx]
+  print(gene_of_interest)
+  dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
+
+  data_summary <- load_data(gene_of_interest, window_size)
+
+  lst_data <- list(
+    risk_factors = list(
+      FinnGen = data_summary$Fin_o,
+      UKBB = data_summary$UKB_o
     ),
     outcome = NULL
   )
@@ -319,7 +369,7 @@ for (idx in 470:length(filtered_g4)) {
   LD_UKBB <- res[["UKBB"]]$LD
   LD_FinnGen <- res[["FinnGen"]]$LD
 
-  runID0 <- "CASE3_FinnGenLD"
+  runID0 <- "CASE3o_FinnGenLD"
   dir_results0 <- file.path("results", runID0, paste0("window_", window_size), gene_of_interest)
   res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_FinnGen
   run_coloc(res, dir_results)
@@ -327,7 +377,7 @@ for (idx in 470:length(filtered_g4)) {
   run_propcoloc_Wallace(res, dir_results0)
   run_susie(res, dir_results0)
 
-  runID0 <- "CASE3_UKBBLD"
+  runID0 <- "CASE3o_UKBBLD"
   dir_results0 <- file.path("results", runID0, paste0("window_", window_size), gene_of_interest)
   res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_UKBB
   run_coloc(res, dir_results)
@@ -338,19 +388,21 @@ for (idx in 470:length(filtered_g4)) {
 ```
 
 
-# CASE4
+# CASE3
 ```{r}
-runID <- "CASE4"
-for (gene_of_interest in filtered_genes) {
+runID <- "CASE3s"
+# DPP7 - Only 2 SNPs left. Error in run_propcoloc_Wallace
+for (idx in 1:length(filtered_g5)) {
+  gene_of_interest <- filtered_g5[idx]
+  print(gene_of_interest)
   dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
 
-  list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
-  list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
+  data_summary <- load_data(gene_of_interest, window_size)
 
   lst_data <- list(
     risk_factors = list(
-      FinnGen = list_data_FinnGen[["Somascan"]],
-      UKBB = list_data_UKBB[["Olink"]]
+      FinnGen = data_summary$Fin_s,
+      EGA = data_summary$EGA_s
     ),
     outcome = NULL
   )
@@ -366,19 +418,21 @@ for (gene_of_interest in filtered_genes) {
   run_coloc(res, dir_results)
   run_susie(res, dir_results)
 
-  LD_UKBB <- res[["UKBB"]]$LD
+  LD_UKBB <- res[["EGA"]]$LD
   LD_FinnGen <- res[["FinnGen"]]$LD
 
-  runID0 <- "CASE4_FinnGenLD"
+  runID0 <- "CASE3s_FinnGenLD"
   dir_results0 <- file.path("results", runID0, paste0("window_", window_size), gene_of_interest)
-  res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_FinnGen
+  res[["EGA"]]$LD <- res[["FinnGen"]]$LD <- LD_FinnGen
+  run_coloc(res, dir_results)
   run_colocProp(res, dir_results0)
   run_propcoloc_Wallace(res, dir_results0)
   run_susie(res, dir_results0)
 
-  runID0 <- "CASE4_UKBBLD"
+  runID0 <- "CASE3s_UKBBLD"
   dir_results0 <- file.path("results", runID0, paste0("window_", window_size), gene_of_interest)
-  res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_UKBB
+  res[["EGA"]]$LD <- res[["FinnGen"]]$LD <- LD_UKBB
+  run_coloc(res, dir_results)
   run_colocProp(res, dir_results0)
   run_propcoloc_Wallace(res, dir_results0)
   run_susie(res, dir_results0)
@@ -387,11 +441,20 @@ for (gene_of_interest in filtered_genes) {
 
 ```{r}
 CASE1 <- get_all_results("CASE1", c("group1", "group2"), window_size)
-CASE1 <- CASE1[apply(is.na(CASE1), 1, sum) != 9, ]
-CASE2 <- get_all_results("CASE2", c("Somascan", "Olink"), window_size)
-CASE3 <- get_all_results("CASE3", c("FinnGen", "UKBB"), window_size)
-CASE3_LD1 <- get_all_results("CASE3_FinnGenLD", c("FinnGen", "UKBB"), window_size)
-CASE3_LD2 <- get_all_results("CASE3_UKBBLD", c("FinnGen", "UKBB"), window_size)
+
+CASE2F <- get_all_results("CASE2F", c("Somascan", "Olink"), window_size)
+CASE2U <- get_all_results("CASE2U", c("Somascan", "Olink"), window_size)
+
+CASE3o <- get_all_results("CASE3o", c("FinnGen", "UKBB"), window_size)
+CASE3o_LD1 <- get_all_results("CASE3o_FinnGenLD", c("FinnGen", "UKBB"), window_size)
+CASE3o_LD2 <- get_all_results("CASE3o_UKBBLD", c("FinnGen", "UKBB"), window_size)
+
+CASE3s <- get_all_results("CASE3s", c("FinnGen", "EGA"), window_size)
+CASE3s_LD1 <- get_all_results("CASE3s_FinnGenLD", c("FinnGen", "EGA"), window_size)
+CASE3s_LD2 <- get_all_results("CASE3s_UKBBLD", c("FinnGen", "EGA"), window_size)
+
+combined <- Reduce("rbind", list(CASE1, CASE2U, CASE2F, CASE3o, CASE3o_LD1, CASE3o_LD2, CASE3s, CASE3s_LD1, CASE3s_LD2))
+write.table(combined, "combined.txt", quote = F, row.names = F, col.names = F, sep = "\t")
 ```
 
 ```{r}
@@ -412,7 +475,6 @@ merged <- merge(CASE3_LD2[, setdiff(colnames(CASE3_LD2), "g_coloc_H4")], CASE3[,
 CASE_filt <- subset(merged, gene %in% filtered_g4)
 print_summary_tab(CASE_filt)
 print_summary_tab(CASE_filt, print_percent = T)
-
 
 
 CASE3_filt <- subset(CASE3, gene %in% filtered_g1)
