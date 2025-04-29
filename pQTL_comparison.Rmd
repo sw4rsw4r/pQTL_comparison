@@ -176,46 +176,40 @@ for (idx in 1:nrow(df_EGA_subset)) {
 ```
 
 ```{r}
-# https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
-df_EGA_studies <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
-df_EGA_studies <- df_EGA_studies %>%
-  mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait))
 genes_FinnGen <- list_genes
 genes_UKBB_olink <- files_df$genename
 genes_UKBB_somascan <- unique(df_EGA_studies$genename)
 genes_common <- Reduce(intersect, list(genes_UKBB_olink, genes_UKBB_somascan, genes_FinnGen))
 
+# https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
 MHC <- list(
   CHR = 6,
   start = 28510120,
   end = 33480577
 )
-genes_in_MHC <- genes_Xchr <- NULL
-for (gene_of_interest in genes_common) {
-  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
-  if (region$CHR == MHC$CHR && region$locus_lower > MHC$start && region$locus_upper < MHC$end) genes_in_MHC <- c(genes_in_MHC, gene_of_interest)
-  if (region$CHR == "X") genes_Xchr <- c(genes_Xchr, gene_of_interest)
-}
-filtered_genes <- setdiff(genes_common, genes_in_MHC)
-filtered_genes <- setdiff(filtered_genes, genes_Xchr)
+gene_regions <- as.data.frame(do.call(rbind, lapply(genes_common, function(g) get_gene_region_GRCh38_UKBB(g, window_size))))
+genes_in_MHC <- genes_common[gene_regions$CHR == MHC$CHR & gene_regions$locus_lower > MHC$start & gene_regions$locus_upper < MHC$end]
+genes_Xchr <- genes_common[gene_regions$CHR == "X"]
+
+filtered_genes <- setdiff(genes_common, genes_in_MHC) # 1132 genes left
+filtered_genes <- setdiff(filtered_genes, genes_Xchr) # 1100 genes left
 
 pval_cutoff <- 1e-08
 filt_FinnGen_soma <- filt_FinnGen_olink <- filt_UKBB_olink <- filt_EGA_soma <- NULL
 for (gene_of_interest in filtered_genes) {
-  list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS"))
-  list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS"))
+  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
+  data_UKB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
 
-  if (gene_of_interest == "TYRO3") {
+  if (gene_of_interest == "TYRO3") { # No SNP remain in this gene region in the EGA data
     filt_EGA_soma <- c(filt_EGA_soma, F)
   } else {
-    list_data_EGA <- readRDS(paste0("data/RData/EGA/", gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS"))
-    filt_EGA_soma <- c(filt_EGA_soma, nrow(subset(list_data_EGA[["Somascan"]], pval < pval_cutoff)) > 0)
+    data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
+    filt_EGA_soma <- c(filt_EGA_soma, nrow(subset(data_EGA[["Somascan"]], pval < pval_cutoff)) > 0)
   }
-  list_data_subset <- c(list_data_FinnGen, list_data_UKBB, list_data_EGA)
 
-  filt_FinnGen_soma <- c(filt_FinnGen_soma, nrow(subset(list_data_FinnGen[["Somascan"]], pval < pval_cutoff)) > 0)
-  filt_FinnGen_olink <- c(filt_FinnGen_olink, nrow(subset(list_data_FinnGen[["Olink"]], pval < pval_cutoff)) > 0)
-  filt_UKBB_olink <- c(filt_UKBB_olink, nrow(subset(list_data_UKBB[["Olink"]], pval < pval_cutoff)) > 0)
+  filt_FinnGen_soma <- c(filt_FinnGen_soma, nrow(subset(data_FinnGen[["Somascan"]], pval < pval_cutoff)) > 0)
+  filt_FinnGen_olink <- c(filt_FinnGen_olink, nrow(subset(data_FinnGen[["Olink"]], pval < pval_cutoff)) > 0)
+  filt_UKBB_olink <- c(filt_UKBB_olink, nrow(subset(data_UKB[["Olink"]], pval < pval_cutoff)) > 0)
 }
 df_genes <- data.frame(
   filt_FinnGen_soma,
