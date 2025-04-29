@@ -5,13 +5,13 @@ library(ggplot2)
 library(tidyr)
 # library(biomaRt)
 
-check_dir <- function(dirpath) {
+ensure_dir <- function(dirpath) {
   if (!file.exists(dirpath)) {
     dir.create(dirpath, recursive = T)
   }
 }
 
-# get_gene_region_GRCh38 <- function(gene_of_interest, window_size) {
+# get_gene_region_GRCh38 <- function(gene_of_interest, WINDOW_SIZE) {
 #   this_chrom <- read.delim("data/FinnGen/pQTL/Olink/probe_map.tsv") %>%
 #     filter(geneName == gene_of_interest) %>%
 #     pull(chr)
@@ -42,8 +42,8 @@ check_dir <- function(dirpath) {
 #     resultTable,
 #     list(
 #       CHR = chromosome_name,
-#       locus_lower = max(start - window_size, 0),
-#       locus_upper = end + window_size,
+#       locus_lower = max(start - WINDOW_SIZE, 0),
+#       locus_upper = end + WINDOW_SIZE,
 #       gene_name = gene_of_interest
 #     )
 #   )
@@ -51,7 +51,7 @@ check_dir <- function(dirpath) {
 # }
 
 
-get_gene_region_GRCh38_UKBB <- function(gene_of_interest, window_size) {
+get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   df_anno <- vroom("data/UKBB/Metadata/Protein_annotation/olink_protein_map_3k_v1.tsv")
 
   if (gene_of_interest == "MYLPF") {
@@ -70,8 +70,8 @@ get_gene_region_GRCh38_UKBB <- function(gene_of_interest, window_size) {
     resultTable,
     list(
       CHR = chr,
-      locus_lower = max(gene_start - window_size, 0),
-      locus_upper = gene_end + window_size,
+      locus_lower = max(gene_start - WINDOW_SIZE, 0),
+      locus_upper = gene_end + WINDOW_SIZE,
       gene_name = gene_of_interest
     )
   )
@@ -108,69 +108,6 @@ compute_pval <- function(beta, se, prec = 100) {
   return(list(pval = pval, nlog10pval = nlog10pval))
 }
 
-load_pQTL_deCODE <- function(gene_of_interest, risk_factor, data_dir, window_size, data_type = "quant", case_prop = NA) {
-  # https://www.decode.com/summarydata/
-  # Grímur Hjörleifsson Eldjarn, Egil Ferkingstad et al. Large-scale plasma proteomics comparisons through genetics and disease associations
-
-  filepath <- list.files(data_dir, pattern = paste0("_", gene_of_interest, "_"), full.names = T)
-  if (risk_factor == "deCODE_SMP") {
-    filepath <- grep(".txt.gz$", grep("Proteomics_SMP_PC0", filepath, value = T), value = T)
-  } else if (risk_factor == "UKBB") {
-    filepath <- grep(".txt.gz$", grep("GBR_UKB_OLINK2_", filepath, value = T), value = T)
-  }
-
-  region <- get_gene_region_GRCh38(gene_of_interest, window_size)
-  df <- vroom::vroom(filepath)
-  df_filt0 <- df %>%
-    dplyr::filter(
-      Chrom == paste0("chr", region$CHR),
-      Pos >= region$locus_lower,
-      Pos <= region$locus_upper,
-      effectAllele != otherAllele
-    )
-  list_multiallelic <- df_filt0$Pos[duplicated(df_filt0$Pos)]
-  df_filt <- df_filt0 %>%
-    dplyr::filter(
-      effectAllele != "*",
-      otherAllele != "*",
-      nchar(effectAllele) == 1,
-      nchar(otherAllele) == 1
-    )
-  # group_by(rsids) %>%
-  # slice_max(order_by = abs(Beta), n = 1, with_ties = F) %>%
-  # ungroup()
-  n_total <- length(unique(df_filt0$Pos))
-  n_indel <- length(unique(subset(df_filt0, !Pos %in% df_filt$Pos)$Pos))
-  n_multi <- length(unique(list_multiallelic))
-  ratio_indel <- n_indel / n_total
-  ratio_multiallelic <- n_multi / n_total
-  ratio_intersect <- length(intersect(list_multiallelic, subset(df_filt0, !Pos %in% df_filt$Pos)$Pos)) / n_total
-  df_filt <- df_filt %>%
-    dplyr::filter(
-      !Pos %in% list_multiallelic,
-      rsids != "."
-    )
-
-  computed_P <- with(df_filt, compute_pval(Beta, SE))
-
-  res <- with(df_filt, dplyr::tibble(
-    beta = Beta,
-    se = SE,
-    varbeta = SE^2,
-    snp = sapply(strsplit(df_filt$rsids, ","), function(x) x[1]),
-    effect = toupper(effectAllele),
-    other = toupper(otherAllele),
-    chrom = Chrom,
-    position = Pos,
-    MAF = ImpMAF,
-    type = data_type,
-    s = case_prop,
-    pval = computed_P$pval,
-    nlog10P = computed_P$nlog10pval,
-    nsample = N,
-  ))
-  return(list(res = res, ratio_indel = ratio_indel, ratio_multiallelic = ratio_multiallelic, ratio_intersect = ratio_intersect))
-}
 
 download_files_FinnGen <- function(gene_of_interest, risk_factor) {
   if (risk_factor == "Olink") {
@@ -192,26 +129,26 @@ download_files_FinnGen <- function(gene_of_interest, risk_factor) {
   system(cmd2)
 }
 
-get_rsID_info <- function(region) {
-  # filepath_dbSNP <- "https://ftp.ncbi.nih.gov/snp/organisms/human_9606/VCF/common_all_20180418.vcf.gz"
-  filepath_dbSNP <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/dbSNP/common_all_20180418.vcf.gz"
-  tabix_file <- TabixFile(filepath_dbSNP)
-  region$CHR <- sub(23, "X", region$CHR)
-  tabix_out <- scanTabix(tabix_file, param = with(region, GRanges(CHR, IRanges(locus_lower, locus_upper))))[[1]]
-  df_dbSNP <- tabix_out %>%
-    strsplit("\t") %>%
-    do.call(rbind, .) %>%
-    as.data.frame()
-  if (nrow(df_dbSNP) == 0) {
-    return(NULL)
-  }
-  col_names <- c("CHR", "POS", "rsID", "REF", "ALT")
-  colnames(df_dbSNP)[1:5] <- col_names
-  df_dbSNP <- df_dbSNP %>%
-    separate_rows(ALT, sep = ",")
-  df_dbSNP$POS <- as.numeric(df_dbSNP$POS)
-  return(df_dbSNP[, col_names])
-}
+# get_rsID_info <- function(region) {
+#   # filepath_dbSNP <- "https://ftp.ncbi.nih.gov/snp/organisms/human_9606/VCF/common_all_20180418.vcf.gz"
+#   filepath_dbSNP <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/dbSNP/common_all_20180418.vcf.gz"
+#   tabix_file <- TabixFile(filepath_dbSNP)
+#   region$CHR <- sub(23, "X", region$CHR)
+#   tabix_out <- scanTabix(tabix_file, param = with(region, GRanges(CHR, IRanges(locus_lower, locus_upper))))[[1]]
+#   df_dbSNP <- tabix_out %>%
+#     strsplit("\t") %>%
+#     do.call(rbind, .) %>%
+#     as.data.frame()
+#   if (nrow(df_dbSNP) == 0) {
+#     return(NULL)
+#   }
+#   col_names <- c("CHR", "POS", "rsID", "REF", "ALT")
+#   colnames(df_dbSNP)[1:5] <- col_names
+#   df_dbSNP <- df_dbSNP %>%
+#     separate_rows(ALT, sep = ",")
+#   df_dbSNP$POS <- as.numeric(df_dbSNP$POS)
+#   return(df_dbSNP[, col_names])
+# }
 
 complement_allele <- function(allele) {
   comp_map <- c("A" = "T", "T" = "A", "C" = "G", "G" = "C")
@@ -272,11 +209,11 @@ delete_files <- function(filepath) {
   file.remove(paste0(filepath, ".tbi"))
 }
 
-load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, window_size, data_type = "quant", case_prop = NA) {
+load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, WINDOW_SIZE, data_type = "quant", case_prop = NA) {
   filepath <- paste0(data_dir, "/", risk_factor, "_", gene_of_interest, ".txt.gz")
   if (!file.exists(filepath)) download_files_FinnGen(gene_of_interest, risk_factor)
 
-  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
   df_pQTL <- read_tabix(filepath, region)
   delete_files(filepath)
 
@@ -309,7 +246,7 @@ load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, window_si
 }
 
 
-load_CASE1 <- function(gene_of_interest, risk_factor, data_dir, window_size, data_type = "quant", case_prop = NA) {
+load_CASE1 <- function(gene_of_interest, risk_factor, data_dir, WINDOW_SIZE, data_type = "quant", case_prop = NA) {
   file_pQTL <- paste0(data_dir, "/", gene_of_interest, "_", risk_factor, ".protein_level.glm.linear")
   file_freq <- paste0(data_dir, "/", gene_of_interest, "_", risk_factor, ".afreq")
 
@@ -363,13 +300,13 @@ load_CASE1 <- function(gene_of_interest, risk_factor, data_dir, window_size, dat
 }
 
 
-load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, window_size, risk_factor = "Olink", data_type = "quant", case_prop = NA) {
+load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, WINDOW_SIZE, risk_factor = "Olink", data_type = "quant", case_prop = NA) {
   # download files
   path_download <- "data/UKBB/UKB_PPP_pGWAS_summary_statistics"
   synGet(target_id, downloadLocation = path_download)
   list_files <- untar(file.path(path_download, filename_tar), list = T)
 
-  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
   selected <- grep(paste0("_chr", region$CHR, "_"), list_files, value = T)
   untar(file.path(path_download, filename_tar), files = selected)
 
@@ -477,8 +414,8 @@ add_AF <- function(res) {
 }
 
 
-load_pQTL_EGA <- function(gene_of_interest, filepath, window_size, data_type = "quant", case_prop = NA) {
-  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+load_pQTL_EGA <- function(gene_of_interest, filepath, WINDOW_SIZE, data_type = "quant", case_prop = NA) {
+  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
   filename <- paste0("data/EGA/", gene_of_interest, ".txt")
   if (!file.exists(filename)) {
     cmd <- paste0("wget ", filepath, " -O ", filename)
@@ -537,7 +474,7 @@ load_pQTL_EGA <- function(gene_of_interest, filepath, window_size, data_type = "
 load_liftOver_hg38ToHg19 <- function() {
   filepath_liftOver <- "data/liftOver/hg38ToHg19.over.chain"
   if (!file.exists(filepath_liftOver)) {
-    check_dir(dirname(filepath_liftOver))
+    ensure_dir(dirname(filepath_liftOver))
     cmd1 <- "wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/liftOver/hg38ToHg19.over.chain.gz -O data/liftOver/hg38ToHg19.over.chain.gz"
     cmd2 <- "gunzip data/liftOver/hg38ToHg19.over.chain.gz"
     system(cmd1)
@@ -551,7 +488,7 @@ load_liftOver_hg38ToHg19 <- function() {
 load_liftOver_hg19ToHg38 <- function() {
   filepath_liftOver <- "data/liftOver/hg19ToHg38.over.chain"
   if (!file.exists(filepath_liftOver)) {
-    check_dir(dirname(filepath_liftOver))
+    ensure_dir(dirname(filepath_liftOver))
     cmd1 <- "wget https://hgdownload.soe.ucsc.edu/gbdb/hg19/liftOver/hg19ToHg38.over.chain.gz -O data/liftOver/hg19ToHg38.over.chain.gz"
     cmd2 <- "gunzip data/liftOver/hg19ToHg38.over.chain.gz"
     system(cmd1)
@@ -585,8 +522,8 @@ get_liftOver_hg19ToHg38 <- function(chrom, position) {
   return(as.data.frame(lifted_over)$end)
 }
 
-get_ld_path_UKBB <- function(gene_of_interest, window_size) {
-  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+get_ld_path_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
+  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
 
   hg19_start <- with(region, get_liftOver_hg38Tohg19(CHR, locus_lower))
   hg19_end <- with(region, get_liftOver_hg38Tohg19(CHR, locus_upper))
@@ -622,14 +559,14 @@ download_files_LD_UKBB <- function(filepath_ld) {
   system(cmd)
 }
 
-load_ld_mat_UKBB <- function(gene_of_interest, window_size, rsids_to_keep, dir_output) {
+load_ld_mat_UKBB <- function(gene_of_interest, WINDOW_SIZE, rsids_to_keep, dir_output) {
   dir_LD <- "data/UKBB/ld_matrix"
-  filename_LD <- file.path(dir_output, "LD", "UKBB", paste0(gene_of_interest, "_window_", window_size, "_LD.RDS"))
-  check_dir(dirname(filename_LD))
+  filename_LD <- file.path(dir_output, "LD", "UKBB", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_LD.RDS"))
+  ensure_dir(dirname(filename_LD))
   if (file.exists(filename_LD)) {
     LD <- readRDS(filename_LD)
   } else {
-    filename_ld <- get_ld_path_UKBB(gene_of_interest, window_size)
+    filename_ld <- get_ld_path_UKBB(gene_of_interest, WINDOW_SIZE)
     filepath_ld_mat <- file.path(dir_LD, filename_ld)
     filepath_ld_meta <- sub(".npz$", ".gz", filepath_ld_mat)
 
@@ -672,14 +609,14 @@ harmonize_ld <- function(ld_mat, ld_merged) {
   return(ld_mat_corrected)
 }
 
-load_ld_mat_FinnGen <- function(gene_of_interest, window_size, IDs_to_keep, dir_output) {
+load_ld_mat_FinnGen <- function(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_output) {
   dir_LD <- "data/FinnGen/ld_matrix/"
-  filename_LD <- file.path(dir_output, "LD", "FinnGen", paste0(gene_of_interest, "_window_", window_size, "_LD.RDS"))
-  check_dir(dirname(filename_LD))
+  filename_LD <- file.path(dir_output, "LD", "FinnGen", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_LD.RDS"))
+  ensure_dir(dirname(filename_LD))
   if (file.exists(filename_LD)) {
     LD <- readRDS(filename_LD)
   } else {
-    region <- get_gene_region_GRCh38_UKBB(gene_of_interest, window_size)
+    region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
 
     filename_ld <- paste0(dir_LD, "finngen_r12_chr", region$CHR, "_ld.tsv.gz")
     tabix_file <- TabixFile(filename_ld)
@@ -752,27 +689,25 @@ load_ld_mat_FinnGen <- function(gene_of_interest, window_size, IDs_to_keep, dir_
   return(LD)
 }
 
-harmonize <- function(runID, gene_of_interest, window_size, lst_data, LD_type, dir_output) {
-  names_risk_factor <- names(lst_data$risk_factor)
-  names_outcome <- names(lst_data$outcome)
+harmonize <- function(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type, dir_output) {
+  names_risk_factor <- names(list_data$risk_factor)
   fname_harmonize <- file.path(dir_output, "harmonize", "harmonize.RDS")
 
   if (file.exists(fname_harmonize)) {
     res <- readRDS(fname_harmonize)
   } else {
-    check_dir(dirname(fname_harmonize))
-    lst_data_combined <- c(lst_data$risk_factor, lst_data$outcome)
+    ensure_dir(dirname(fname_harmonize))
 
-    rsids_to_keep <- Reduce("intersect", lapply(lst_data_combined, function(x) x$snp))
+    rsids_to_keep <- Reduce("intersect", lapply(list_data, function(x) x$snp))
 
-    n_samples <- sapply(lst_data_combined, function(x) mean(x$nsample, na.rm = T))
+    n_samples <- sapply(list_data, function(x) mean(x$nsample, na.rm = T))
     max_sample <- max(n_samples)
     selected_factor <- sort(names(which(n_samples == max_sample)))[1]
 
     res <- list()
-    for (this_factor in setdiff(names(lst_data_combined), selected_factor)) {
-      merged <- lst_data_combined[[selected_factor]] %>%
-        dplyr::inner_join(lst_data_combined[[this_factor]], by = "snp", suffix = c("_1", "_2")) %>%
+    for (this_factor in setdiff(names(list_data), selected_factor)) {
+      merged <- list_data[[selected_factor]] %>%
+        dplyr::inner_join(list_data[[this_factor]], by = "snp", suffix = c("_1", "_2")) %>%
         dplyr::filter(snp %in% rsids_to_keep) %>%
         dplyr::mutate(
           effect_2_ori = effect_2,
@@ -791,14 +726,14 @@ harmonize <- function(runID, gene_of_interest, window_size, lst_data, LD_type, d
       colnames(dat) <- sub("_2$", "", colnames(dat))
       res[[length(res) + 1]] <- dat
     }
-    names(res) <- c(selected_factor, setdiff(names(lst_data_combined), selected_factor))
+    names(res) <- c(selected_factor, setdiff(names(list_data), selected_factor))
 
     if (length(LD_type) == 1) {
       if (LD_type == "FinnGen") {
         IDs_to_keep <- res[[selected_factor]]$ID
-        LD <- load_ld_mat_FinnGen(gene_of_interest, window_size, IDs_to_keep, dir_output)
+        LD <- load_ld_mat_FinnGen(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_output)
       } else if (LD_type == "UKBB") {
-        LD <- load_ld_mat_UKBB(gene_of_interest, window_size, rsids_to_keep, dir_output)
+        LD <- load_ld_mat_UKBB(gene_of_interest, WINDOW_SIZE, rsids_to_keep, dir_output)
       }
       ld_merged <- as_tibble(res[[selected_factor]]) %>% left_join(LD$meta, by = "snp", suffix = c("_1", "_2"))
       ld_merged <- ld_merged %>% dplyr::filter((effect_1 == effect_2 & other_1 == other_2) | (effect_1 == other_2 & other_1 == effect_2))
@@ -807,11 +742,11 @@ harmonize <- function(runID, gene_of_interest, window_size, lst_data, LD_type, d
       for (id in names(res)) list_LD[[id]] <- ld_mat_harmonised
     } else {
       IDs_to_keep <- res[[selected_factor]]$ID
-      LD <- load_ld_mat_FinnGen(gene_of_interest, window_size, IDs_to_keep, dir_output)
+      LD <- load_ld_mat_FinnGen(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_output)
       ld_merged <- as_tibble(res[[selected_factor]]) %>% inner_join(LD$meta, by = "snp", suffix = c("_1", "_2"))
       ld_merged <- ld_merged %>% dplyr::filter((effect_1 == effect_2 & other_1 == other_2) | (effect_1 == other_2 & other_1 == effect_2))
 
-      LD2 <- load_ld_mat_UKBB(gene_of_interest, window_size, rsids_to_keep, dir_output)
+      LD2 <- load_ld_mat_UKBB(gene_of_interest, WINDOW_SIZE, rsids_to_keep, dir_output)
       ld_merged2 <- as_tibble(res[[selected_factor]]) %>% inner_join(LD2$meta, by = "snp", suffix = c("_1", "_2"))
       ld_merged2 <- ld_merged2 %>% dplyr::filter((effect_1 == effect_2 & other_1 == other_2) | (effect_1 == other_2 & other_1 == effect_2))
 
@@ -836,49 +771,48 @@ harmonize <- function(runID, gene_of_interest, window_size, lst_data, LD_type, d
     }
 
     res$names$risk_factors <- names_risk_factor
-    res$names$outcome <- names_outcome
     saveRDS(res, file = fname_harmonize)
   }
   return(res)
 }
 
 
-run_colocProp <- function(res, dir_results, this_prune = 0.4, this_J = 10) {
+run_colocProp <- function(res, dir_results, this_J = 10) {
   RF1 <- res$names$risk_factors[1]
   RF2 <- res$names$risk_factors[2]
 
   fname_prop.coloc.res1 <- file.path(dir_results, "propcoloc", "prop.coloc.RDS")
   fname_prop.coloc.res2 <- file.path(dir_results, "propcoloc", "prop.coloc.txt")
-  check_dir(dirname(fname_prop.coloc.res1))
+  ensure_dir(dirname(fname_prop.coloc.res1))
   # if (file.exists(fname_prop.coloc.res1) & file.exists(fname_prop.coloc.res2)) {
   #   return()
   # }
 
-  # prop.coloc.res <- NULL
-  # n_try <- 0
-  # while (is.null(prop.coloc.res)) {
-  #   prop.coloc.res <- tryCatch(
-  #     {
-  #       prop.coloc::prop.coloc(
-  #         b1 = res[[RF1]]$beta, se1 = res[[RF1]]$se, b2 = res[[RF2]]$beta, se2 = res[[RF2]]$se,
-  #         n = c(res[[RF1]]$N, res[[RF2]]$N),
-  #         ld = res[[RF1]]$LD, figs = TRUE, traits = c(RF1, RF2),
-  #         prune = this_prune, J = this_J
-  #       )
-  #     },
-  #     error = function(e) {
-  #       return(NULL)
-  #     }
-  #   )
-  #   if (is.null(prop.coloc.res) & n_try == 0) {
-  #     this_prune <- 0.2
-  #     this_J <- 5
-  #     n_try <- n_try + 1
-  #   } else if (is.null(prop.coloc.res) & n_try == 1) {
-  #     prop.coloc.res <- list(p_full = NA, p_cond = NA, LM_full = NA, LM_cond = NA)
-  #   }
-  # }
-
+  prop.coloc.res <- NULL
+  prune_values <- c(0.4, 0.3, 0.2, 0.1, 0.01, 0.001, 0.0001, 0.00001)
+  current_prune_index <- 1
+  while (is.null(prop.coloc.res) && current_prune_index <= length(prune_values)) {
+    this_prune <- prune_values[current_prune_index]
+    prop.coloc.res <- tryCatch(
+      {
+        prop.coloc::prop.coloc(
+          b1 = res[[RF1]]$beta, se1 = res[[RF1]]$se, b2 = res[[RF2]]$beta, se2 = res[[RF2]]$se,
+          n = c(res[[RF1]]$N, res[[RF2]]$N),
+          ld = res[[RF1]]$LD, figs = TRUE, traits = c(RF1, RF2),
+          prune = this_prune, J = this_J
+        )
+      },
+      error = function(e) {
+        return(NULL)
+      }
+    )
+    if (is.null(prop.coloc.res)) {
+      current_prune_index <- current_prune_index + 1
+    } else {
+      break
+    }
+  }
+  if (is.null(prop.coloc.res)) prop.coloc.res <- list(p_full = NA, p_cond = NA, LM_full = NA, LM_cond = NA)
 
   prop.coloc.res <- tryCatch(
     {
@@ -898,15 +832,15 @@ run_colocProp <- function(res, dir_results, this_prune = 0.4, this_J = 10) {
     return()
   }
 
-  # prop.coloc.res$J <- this_J
-  # prop.coloc.res$prune <- this_prune
-  # prop.coloc.res$rsIDs <- res[[1]]$snp
+  prop.coloc.res$J <- this_J
+  prop.coloc.res$prune <- this_prune
+  prop.coloc.res$rsIDs <- res[[1]]$snp
 
-  # saveRDS(prop.coloc.res, file = fname_prop.coloc.res1)
-  # write.table(as.data.frame(prop.coloc.res[sapply(prop.coloc.res, length) == 1]),
-  #   fname_prop.coloc.res2,
-  #   quote = F, row.names = F, col.names = T, sep = "\t"
-  # )
+  saveRDS(prop.coloc.res, file = fname_prop.coloc.res1)
+  write.table(as.data.frame(prop.coloc.res[sapply(prop.coloc.res, length) == 1]),
+    fname_prop.coloc.res2,
+    quote = F, row.names = F, col.names = T, sep = "\t"
+  )
 }
 
 
@@ -915,7 +849,7 @@ run_coloc <- function(res, dir_results) {
   RF2 <- res$names$risk_factors[2]
   fname_output1 <- file.path(dir_results, "coloc", "coloc_sensitivity.pdf")
   fname_output2 <- file.path(dir_results, "coloc", "coloc.txt")
-  check_dir(dirname(fname_output1))
+  ensure_dir(dirname(fname_output1))
   # if (file.exists(fname_output1) & file.exists(fname_output2)) {
   #   return()
   # }
@@ -946,7 +880,7 @@ run_susie <- function(res, dir_results) {
 
   fname_output1 <- file.path(dir_results, "susie", "susie.txt")
   fname_output2 <- file.path(dir_results, "susie", "susie_sensitivity.pdf")
-  check_dir(dirname(fname_output1))
+  ensure_dir(dirname(fname_output1))
   # if (file.exists(fname_output1) & file.exists(fname_output2)) {
   #   return()
   # }
@@ -996,7 +930,7 @@ run_propcoloc_Wallace <- function(res, dir_results) {
   RF2 <- res$names$risk_factors[2]
 
   fname_output <- file.path(dir_results, "propcoloc_Wallace", "propcoloc_Wallace.txt")
-  check_dir(dirname(fname_output))
+  ensure_dir(dirname(fname_output))
   # if (file.exists(fname_output)) {
   #   return()
   # }
@@ -1083,11 +1017,11 @@ get_colocPropTest_res <- function(dir_results, list_factors) {
 }
 
 
-get_all_results <- function(runID, names_risk_factor, window_size) {
-  lst <- list.files(file.path("results", runID, paste0("window_", window_size)))
+get_all_results <- function(runID, names_risk_factor, WINDOW_SIZE) {
+  lst <- list.files(file.path("results", runID, paste0("window_", WINDOW_SIZE)))
   merged <- NULL
   for (gene_of_interest in lst) {
-    dir_results <- file.path("results", runID, paste0("window_", window_size), gene_of_interest)
+    dir_results <- file.path("results", runID, paste0("window_", WINDOW_SIZE), gene_of_interest)
     res_propcoloc <- get_propcoloc_res(dir_results, names_risk_factor)
     res_susie <- get_susie_res(dir_results, names_risk_factor)
     res_coloc <- get_coloc_res(dir_results, names_risk_factor)
@@ -1101,10 +1035,6 @@ get_all_results <- function(runID, names_risk_factor, window_size) {
       wallace = res_wallace
     ))
   }
-  # summary_coloc <- t(data.frame(table(factor(merged$coloc, levels = c("coloc", "non_coloc", "insufficient")))))[2, , drop = F]
-  # summary_susie <- t(data.frame(table(factor(merged$susie, levels = c("coloc", "non_coloc", "insufficient")))))[2, , drop = F]
-  # summary_propcoloc <- t(data.frame(table(factor(merged$propcoloc, levels = c("coloc", "non_coloc", "insufficient")))))[2, , drop = F]
-  # summary_wallace <- t(data.frame(table(factor(merged$wallace, levels = c("coloc", "non_coloc", "insufficient")))))[2, , drop = F]
 
   summary_coloc <- t(data.frame(prop.table(table(factor(merged$coloc, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
   summary_susie <- t(data.frame(prop.table(table(factor(merged$susie, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
@@ -1112,69 +1042,55 @@ get_all_results <- function(runID, names_risk_factor, window_size) {
   summary_wallace <- t(data.frame(prop.table(table(factor(merged$wallace, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
   summary_combined <- Reduce("cbind", list(summary_coloc, summary_susie, summary_propcoloc, summary_wallace))
   summary_combined <- data.frame(runID, summary_combined)
+
+  methods <- c("coloc", "susie", "propcoloc", "wallace")
+  categories <- c("coloc", "non_coloc", "insufficient")
+  cat_abbr <- c("C", "NC", "IS")
+
+  n_methods <- length(methods)
+  n_categories <- length(categories)
+  row_names <- paste(rep(methods, each = n_categories), cat_abbr, sep = ".")
+  col_names <- paste(rep(methods, each = n_categories), rep(cat_abbr, n_methods), sep = ".")
+  result_table <- matrix(NA,
+    nrow = n_methods * n_categories, ncol = n_methods * n_categories,
+    dimnames = list(row_names, col_names)
+  )
+
+  for (i in 1:n_methods) {
+    for (j in 1:n_methods) {
+      method1 <- methods[i]
+      method2 <- methods[j]
+
+      for (k in 1:n_categories) {
+        for (l in 1:n_categories) {
+          cat1 <- categories[k]
+          cat2 <- categories[l]
+          match_rate <- mean(merged[[method1]] == cat1 & merged[[method2]] == cat2, na.rm = TRUE)
+          row_idx <- (i - 1) * n_categories + k
+          col_idx <- (j - 1) * n_categories + l
+          result_table[row_idx, col_idx] <- round(match_rate, 2) # 소수점 3자리로 반올림
+        }
+      }
+    }
+  }
+  write.table(result_table, paste0("results/", runID, ".txt"), quote = F, row.names = F, col.names = F, sep = "\t")
   return(summary_combined)
 }
 
-
-print_summary_tab <- function(CASE_filt, print_percent = F) {
-  if (print_percent) {
-    print(with(CASE_filt, round(prop.table(table(g_coloc_H4, g_susie_H4, useNA = "always")), 2)))
-    print(with(CASE_filt, round(prop.table(table(g_coloc_H4, g_p_cond, LM_cond > .05, useNA = "always")), 2)))
-    print(with(CASE_filt, round(prop.table(table(g_coloc_H4, g_FDR, useNA = "always")), 2)))
-
-    print(with(CASE_filt, round(prop.table(table(g_susie_H4, g_coloc_H4, useNA = "always")), 2)))
-    print(with(CASE_filt, round(prop.table(table(g_susie_H4, g_p_cond, LM_cond > .05, useNA = "always")), 2)))
-    print(with(CASE_filt, round(prop.table(table(g_susie_H4, g_FDR, useNA = "always")), 2)))
-
-    print(with(CASE_filt, round(prop.table(table(g_p_cond, g_coloc_H4, LM_cond > .05, useNA = "always")), 2)))
-    print(with(CASE_filt, round(prop.table(table(g_p_cond, g_susie_H4, LM_cond > .05, useNA = "always")), 2)))
-    print(with(CASE_filt, round(prop.table(table(g_p_cond, g_FDR, LM_cond > .05, useNA = "always")), 2)))
-
-    print(with(CASE_filt, round(prop.table(table(g_FDR, g_coloc_H4, useNA = "always")), 2)))
-    print(with(CASE_filt, round(prop.table(table(g_FDR, g_susie_H4, useNA = "always")), 2)))
-    print(with(CASE_filt, round(prop.table(table(g_FDR, g_p_cond, LM_cond > .05, useNA = "always")), 2)))
-  } else {
-    print(with(CASE_filt, table(g_coloc_H4, g_susie_H4, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond <= .05), table(g_coloc_H4, g_p_cond, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond > .05), table(g_coloc_H4, g_p_cond, useNA = "always")))
-    print(with(CASE_filt, table(g_coloc_H4, g_FDR, useNA = "always")))
-
-    print(with(CASE_filt, table(g_susie_H4, g_coloc_H4, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond <= .05), table(g_susie_H4, g_p_cond, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond > .05), table(g_susie_H4, g_p_cond, useNA = "always")))
-    print(with(CASE_filt, table(g_susie_H4, g_FDR, useNA = "always")))
-
-    print(with(subset(CASE_filt, LM_cond <= .05), table(g_p_cond, g_coloc_H4, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond <= .05), table(g_p_cond, g_susie_H4, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond <= .05), table(g_p_cond, g_FDR, useNA = "always")))
-
-    print(with(subset(CASE_filt, LM_cond > .05), table(g_p_cond, g_coloc_H4, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond > .05), table(g_p_cond, g_susie_H4, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond > .05), table(g_p_cond, g_FDR, useNA = "always")))
-
-    print(with(CASE_filt, table(g_FDR, g_coloc_H4, useNA = "always")))
-    print(with(CASE_filt, table(g_FDR, g_susie_H4, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond <= .05), table(g_FDR, g_p_cond, useNA = "always")))
-    print(with(subset(CASE_filt, LM_cond > .05), table(g_FDR, g_p_cond, useNA = "always")))
-  }
-}
-
-
-load_data <- function(gene_of_interest, window_size) {
-  list_data_UKBB <- readRDS(paste0("data/RData/UKBB/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
-  list_data_EGA <- readRDS(paste0("data/RData/EGA/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
-  list_data_FinnGen <- readRDS(paste0("data/RData/FinnGen/", gene_of_interest, "_window_", window_size, "_processed.RDS"))
-
-  snps_common <- Reduce("intersect", list(
-    list_data_UKBB$Olink$snp,
-    list_data_EGA$Somascan$snp,
-    list_data_FinnGen$Olink$snp,
-    list_data_FinnGen$Somascan$snp
-  ))
-
-  UKB_o <- list_data_UKBB$Olink %>% filter(snp %in% snps_common)
-  EGA_s <- list_data_EGA$Somascan %>% filter(snp %in% snps_common)
-  Fin_o <- list_data_FinnGen$Olink %>% filter(snp %in% snps_common)
-  Fin_s <- list_data_FinnGen$Somascan %>% filter(snp %in% snps_common)
-  return(list(UKB_o = UKB_o, EGA_s = EGA_s, Fin_o = Fin_o, Fin_s = Fin_s))
+run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type) {
+  dir_output <- file.path("results", runID, paste0("window_", WINDOW_SIZE), gene_of_interest)
+  res <- harmonize(
+    runID = runID,
+    gene_of_interest = gene_of_interest,
+    WINDOW_SIZE = WINDOW_SIZE,
+    list_data = list_data,
+    LD_type = LD_type,
+    dir_output = dir_output
+  )
+  
+  # Run colocalization analyses
+  run_coloc(res, dir_output)
+  run_susie(res, dir_output)
+  run_colocProp(res, dir_output)
+  run_propcoloc_Wallace(res, dir_output)
 }
