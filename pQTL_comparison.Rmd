@@ -23,19 +23,11 @@ export RETICULATE_PYTHON=/home/seongwonhwang/miniconda3/envs/pQTL_comparison2/bi
 ```
 
 ```{r}
-suppressMessages(library(dplyr))
-suppressMessages(library(vroom))
-suppressMessages(library(rtracklayer))
-suppressMessages(library(ggplot2))
-suppressMessages(library(reshape2))
-suppressMessages(library(curl))
-suppressMessages(library(MendelianRandomization))
-suppressMessages(library(coloc))
-suppressMessages(library(susieR))
-suppressMessages(library(Rsamtools))
-suppressMessages(library(stringr))
-suppressMessages(library(combinat))
-suppressMessages(library(hash))
+# Load project-specific functions
+source("PCA-LIML-function.R")
+source("summary_mvMR_BF.R")
+source("summary_mvMR_SSS.R")
+source("utils.R")
 
 # devtools::install_github("ash-res/prop-coloc")
 suppressMessages(library(prop.coloc))
@@ -52,12 +44,6 @@ suppressMessages(library(synapser))
 # install.packages("synapserutils", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
 suppressMessages(library(synapserutils))
 
-# Load project-specific functions
-source("PCA-LIML-function.R")
-source("summary_mvMR_BF.R")
-source("summary_mvMR_SSS.R")
-source("utils.R")
-
 # Constants
 BASE_DATA_DIR <- "data/RData"
 WINDOW_SIZE <- 50000
@@ -65,20 +51,18 @@ WINDOW_SIZE <- 50000
 
 ## Download data
 ```{r}
-probe_olink <- "data/FinnGen/pQTL/Olink/probe_map.tsv"
-probe_somascan <- "data/FinnGen/pQTL/Somascan/probe_map.tsv"
+# wget https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Olink/probe_map.tsv -O data/FinnGen/pQTL/Olink/probe_map.tsv
+# wget https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Somascan/probe_map.tsv -O data/FinnGen/pQTL/Somascan/probe_map.tsv
+Finn_olink <- read.delim("data/FinnGen/pQTL/Olink/probe_map.tsv")
+Finn_somascan <- read.delim("data/FinnGen/pQTL/Somascan/probe_map.tsv")
 
-df_probe_olink <- read.delim(probe_olink)
-df_probe_somascan <- read.delim(probe_somascan)
-
-merged <- merge(df_probe_olink, df_probe_somascan, by = c("geneName", "chr", "start", "end", "chr2"))
-merged <- merged[!duplicated(merged$geneName), ]
-list_genes <- merged$geneName
+Finn_merged <- merge(Finn_olink, Finn_somascan, by = c("geneName", "chr", "start", "end", "chr2"))
+Finn_merged <- Finn_merged[!duplicated(Finn_merged$geneName), ]
+genes_Finn <- Finn_merged$geneName
 ```
 
 ## Load summary data
 ```{r}
-names_risk_factor <- c("Somascan", "Olink")
 ensure_dir("data/RData/FinnGen/")
 data_dir <- "data/FinnGen/pQTL/downloaded/"
 for (gene_of_interest in list_genes) {
@@ -87,7 +71,7 @@ for (gene_of_interest in list_genes) {
   if (!file.exists(filepath_gwas_processed)) {
     list_data_subset <- list()
 
-    for (risk_factor in names_risk_factor) {
+    for (risk_factor in c("Somascan", "Olink")) {
       list_data_subset[[risk_factor]] <- load_pQTL_Finngen(gene_of_interest, risk_factor, data_dir, WINDOW_SIZE)
     }
     saveRDS(list_data_subset, file = filepath_gwas_processed)
@@ -97,8 +81,18 @@ for (gene_of_interest in list_genes) {
 
 # Download ukbiobank summary statistics
 ```{r}
-# download rsID mapping files
-synLogin(authToken = "your_synapse_token_here")
+# Modify your config.json file to include your Synapse authentication token
+# The config.json file should look like this:
+# {
+#   "synapse_token": "your_token_here"
+# }
+# Load the configuration from config.json file
+config <- fromJSON("config.json")
+# Retrieve the Synapse authentication token from the configuration file
+auth_token <- config$synapse_token
+# Login to Synapse using the token
+synLogin(authToken = auth_token)
+# Download the rsID mapping files from Synapse
 synapserutils::syncFromSynapse("syn51396727", path = "data/UKBB/Metadata/SNP_RSID_maps")
 
 # download summarystatistics
