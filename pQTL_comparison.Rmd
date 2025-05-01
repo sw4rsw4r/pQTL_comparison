@@ -58,14 +58,14 @@ Finn_somascan <- read.delim("data/FinnGen/pQTL/Somascan/probe_map.tsv")
 
 Finn_merged <- merge(Finn_olink, Finn_somascan, by = c("geneName", "chr", "start", "end", "chr2"))
 Finn_merged <- Finn_merged[!duplicated(Finn_merged$geneName), ]
-genes_Finn <- Finn_merged$geneName
+genes_FinnGen <- Finn_merged$geneName
 ```
 
 ## Load summary data
 ```{r}
 ensure_dir("data/RData/FinnGen/")
 data_dir <- "data/FinnGen/pQTL/downloaded/"
-for (gene_of_interest in list_genes) {
+for (gene_of_interest in genes_FinnGen) {
   filepath_gwas_processed <- paste0("data/RData/FinnGen/", gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")
 
   if (!file.exists(filepath_gwas_processed)) {
@@ -104,7 +104,7 @@ files_df <- data.frame(
   type = sapply(files_list, function(x) x$type)
 ) %>%
   mutate(genename = sub("_.*", "", name)) %>%
-  filter(genename %in% list_genes, !duplicated(genename))
+  filter(genename %in% genes_FinnGen, !duplicated(genename))
 
 for (idx in 1:nrow(files_df)) {
   gene_of_interest <- files_df[idx, "genename"]
@@ -132,7 +132,7 @@ df_EGA_studies <- df_EGA_studies %>%
   mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait))
 
 df_EGA_subset <- df_EGA_studies %>%
-  filter(genename %in% intersect(list_genes, files_df$genename)) %>%
+  filter(genename %in% intersect(genes_FinnGen, files_df$genename)) %>%
   filter(!duplicated(genename))
 
 for (idx in 1:nrow(df_EGA_subset)) {
@@ -155,7 +155,6 @@ for (idx in 1:nrow(df_EGA_subset)) {
 ```
 
 ```{r}
-genes_FinnGen <- list_genes
 genes_UKBB_olink <- files_df$genename
 genes_UKBB_somascan <- unique(df_EGA_studies$genename)
 genes_common <- Reduce(intersect, list(genes_UKBB_olink, genes_UKBB_somascan, genes_FinnGen))
