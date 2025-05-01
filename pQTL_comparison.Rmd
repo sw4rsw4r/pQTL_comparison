@@ -10,16 +10,22 @@ knitr::opts_chunk$set(echo = TRUE)
 options(warnings = -1)
 ```
 
-# Load packages and functions
-```{r}
-# Installed the following packages by runing:
-# > conda env create -f env.yml
-# > conda activate pQTL_comparison
+# Initialization & Package Loading
+To install the required packages, run the following in your terminal:
+```bash
+conda env create -f env.yml
+conda activate pQTL_comparison
+```
+If `synapser` fails to install, fix the Python path with:
 
+```bash
+export RETICULATE_PYTHON=/home/seongwonhwang/miniconda3/envs/pQTL_comparison2/bin/python
+```
+
+```{r}
 suppressMessages(library(dplyr))
 suppressMessages(library(vroom))
 suppressMessages(library(rtracklayer))
-suppressMessages(library(reticulate))
 suppressMessages(library(ggplot2))
 suppressMessages(library(reshape2))
 suppressMessages(library(curl))
@@ -28,7 +34,8 @@ suppressMessages(library(coloc))
 suppressMessages(library(susieR))
 suppressMessages(library(Rsamtools))
 suppressMessages(library(stringr))
-
+suppressMessages(library(combinat))
+suppressMessages(library(hash))
 
 # devtools::install_github("ash-res/prop-coloc")
 suppressMessages(library(prop.coloc))
@@ -36,8 +43,16 @@ suppressMessages(library(prop.coloc))
 suppressMessages(library(colocPropTest))
 # devtools::install_github("kassambara/easyGgplot2")
 suppressMessages(library(easyGgplot2))
+# remotes::install_github("daynefiler/gnomadR")
 library(gnomadR)
 
+suppressMessages(library(reticulate))
+# install.packages("synapser", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
+suppressMessages(library(synapser))
+# install.packages("synapserutils", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
+suppressMessages(library(synapserutils))
+
+# Load project-specific functions
 source("PCA-LIML-function.R")
 source("summary_mvMR_BF.R")
 source("summary_mvMR_SSS.R")
@@ -106,11 +121,7 @@ for (gene_of_interest in list_genes) {
 
 # Download ukbiobank summary statistics
 ```{r}
-# install.packages("synapser", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
-suppressMessages(library(synapser))
-# install.packages("synapserutils", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
-suppressMessages(library(synapserutils))
-# remotes::install_github("daynefiler/gnomadR")
+
 
 # download rsID mapping files
 synLogin(authToken = "eyJ0eXAiOiJKV1QiLCJraWQiOiJXN05OOldMSlQ6SjVSSzpMN1RMOlQ3TDc6M1ZYNjpKRU9VOjY0NFI6VTNJWDo1S1oyOjdaQ0s6RlBUSCIsImFsZyI6IlJTMjU2In0.eyJhY2Nlc3MiOnsic2NvcGUiOlsidmlldyIsImRvd25sb2FkIl0sIm9pZGNfY2xhaW1zIjp7fX0sInRva2VuX3R5cGUiOiJQRVJTT05BTF9BQ0NFU1NfVE9LRU4iLCJpc3MiOiJodHRwczovL3JlcG8tcHJvZC5wcm9kLnNhZ2ViYXNlLm9yZy9hdXRoL3YxIiwiYXVkIjoiMCIsIm5iZiI6MTczODI3NDI1MywiaWF0IjoxNzM4Mjc0MjUzLCJqdGkiOiIxNTk5NyIsInN1YiI6IjM0OTEwNjgifQ.g-jXRdPbiZJ3zhUEeM07_roLfs24oOlzwoQz_5crFq2WQCCh0yUr1yVidUnBl0pVdmDX2qc2tKweobDd5b3RiUl1br-ILesXv0YbfKcuHbZDZWU6UFpoEGEmhTaWPCl1YIrUFOXWA5ezP2bA5E_Iom2IFdpfm1ZhDjINBWW4LjVHk2gT_hiH5Odf7U1fD3ejeolA6j8b2gzyYHrL-rCPnyB7UH34EOEeq2he5c7Z-qSB13qKuywA83FQYXczAyJa_TxX96eBkNM2yNem_cLAkddud8PHAk6qLKXRoooBw16PUj636evTX1A5Rvor4dI8aB27WxDABwmM7V1jZaLl0w")
