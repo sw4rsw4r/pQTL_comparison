@@ -246,60 +246,6 @@ load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, WINDOW_SI
 }
 
 
-load_CASE1 <- function(gene_of_interest, risk_factor, data_dir, WINDOW_SIZE, data_type = "quant", case_prop = NA) {
-  file_pQTL <- paste0(data_dir, "/", gene_of_interest, "_", risk_factor, ".protein_level.glm.linear")
-  file_freq <- paste0(data_dir, "/", gene_of_interest, "_", risk_factor, ".afreq")
-
-  df_pQTL <- read.delim(file_pQTL)
-  df_freq <- read.delim(file_freq)
-  merged_pQTL <- df_pQTL %>% left_join(df_freq, by = c("X.CHROM", "ID", "REF", "ALT"))
-
-  gr <- with(merged_pQTL, GenomicRanges::GRanges(
-    seqnames = paste0("chr", X.CHROM),
-    beta = BETA,
-    se = SE,
-    varbeta = SE^2,
-    snp = ID,
-    effect = A1,
-    other = ifelse(A1 == ALT, REF, ALT),
-    chrom = X.CHROM,
-    effect_AF = ALT_FREQS,
-    type = data_type,
-    pval = P,
-    nlog10P = -log10(P),
-    nsample = mean(OBS_CT.x),
-    ranges = IRanges(start = POS - 1, end = POS)
-  ))
-  chain_hg19ToHg38 <- load_liftOver_hg19ToHg38()
-  lifted_over <- rtracklayer::liftOver(gr, chain_hg19ToHg38)
-
-  res <- with(as.data.frame(lifted_over), dplyr::tibble(
-    beta,
-    se,
-    varbeta,
-    snp,
-    ID = paste0(seqnames, "_", end, "_", other, "_", effect),
-    effect,
-    other,
-    chrom = sub("chr", "", seqnames),
-    position = end,
-    effect_AF,
-    type,
-    s = case_prop,
-    pval,
-    nlog10P,
-    nsample
-  ))
-
-  # remove duplicated rsIDs
-  res_sorted <- res[order(abs(res$beta), decreasing = T), ]
-  res_filt <- res_sorted[!duplicated(res_sorted$snp), ]
-  res_final <- res_filt[order(res_filt$position), ]
-
-  return(res_final)
-}
-
-
 load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, WINDOW_SIZE, risk_factor = "Olink", data_type = "quant", case_prop = NA) {
   # download files
   path_download <- "data/UKBB/UKB_PPP_pGWAS_summary_statistics"
