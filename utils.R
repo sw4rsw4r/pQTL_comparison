@@ -3,53 +3,26 @@ library(Rmpfr)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
-# library(biomaRt)
+library(dplyr)
+library(vroom)
+library(rtracklayer)
+library(ggplot2)
+library(reshape2)
+library(curl)
+library(MendelianRandomization)
+library(coloc)
+library(susieR)
+library(Rsamtools)
+library(stringr)
+library(combinat)
+library(hash)
+library(jsonlite)
 
 ensure_dir <- function(dirpath) {
   if (!file.exists(dirpath)) {
     dir.create(dirpath, recursive = T)
   }
 }
-
-# get_gene_region_GRCh38 <- function(gene_of_interest, WINDOW_SIZE) {
-#   this_chrom <- read.delim("data/FinnGen/pQTL/Olink/probe_map.tsv") %>%
-#     filter(geneName == gene_of_interest) %>%
-#     pull(chr)
-#   this_chrom <- sub("chr", "", this_chrom)
-
-#   mart <- biomaRt::useMart("ENSEMBL_MART_ENSEMBL", host = "https://May2024.archive.ensembl.org/")
-#   dataset <- biomaRt::useDataset(dataset = "hsapiens_gene_ensembl", mart = mart)
-#   resultTable <- biomaRt::getBM(
-#     attributes = c("external_gene_name", "ensembl_transcript_id", "chromosome_name", "transcript_start", "transcript_end", "gene_biotype", "description"),
-#     filters = "external_gene_name",
-#     values = gene_of_interest,
-#     mart = dataset
-#   )
-#   if (nrow(resultTable) == 0) {
-#     return(NULL)
-#   }
-#   resultTable <- resultTable %>%
-#     mutate(size = transcript_end - transcript_start) %>%
-#     group_by(external_gene_name, chromosome_name) %>%
-#     summarise(
-#       start = min(transcript_start),
-#       end = max(transcript_end),
-#       .groups = "drop"
-#     ) %>%
-#     subset(chromosome_name == this_chrom)
-
-#   res <- with(
-#     resultTable,
-#     list(
-#       CHR = chromosome_name,
-#       locus_lower = max(start - WINDOW_SIZE, 0),
-#       locus_upper = end + WINDOW_SIZE,
-#       gene_name = gene_of_interest
-#     )
-#   )
-#   return(res)
-# }
-
 
 get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   df_anno <- vroom("data/UKBB/Metadata/Protein_annotation/olink_protein_map_3k_v1.tsv")
@@ -78,36 +51,6 @@ get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   return(res)
 }
 
-p_value_filtering <- function(list_data, pval_cutoff = 1e-08) {
-  names_data <- names(list_data)
-
-  snps_filtered <- list()
-  for (data_type in names_data) {
-    df <- list_data[[data_type]]
-    snps_filtered[[data_type]] <- setdiff(with(subset(df, pval <= pval_cutoff), paste0(chrom, ":", position)), ":")
-  }
-  common_snps <- Reduce(intersect, snps_filtered)
-  res <- length(common_snps) > 0
-  return(res)
-}
-
-compute_pval <- function(beta, se, prec = 100) {
-  nlog10pval <- NA
-  while (any(is.na(nlog10pval)) || any(nlog10pval == Inf)) {
-    nlog10pval <- asNumeric(
-      round(-log10(
-        2 * (1 - pnorm(abs(mpfr(beta, prec) / mpfr(se, prec))))
-      ), 5)
-    )
-    if (any(nlog10pval == Inf)) {
-      prec <- prec + 5000
-    } else {
-      pval <- format((2 * (1 - pnorm(abs(mpfr(beta, prec) / mpfr(se, prec))))), digits = 3, scientific = TRUE)
-    }
-  }
-  return(list(pval = pval, nlog10pval = nlog10pval))
-}
-
 
 download_files_FinnGen <- function(gene_of_interest, risk_factor) {
   if (risk_factor == "Olink") {
@@ -129,26 +72,6 @@ download_files_FinnGen <- function(gene_of_interest, risk_factor) {
   system(cmd2)
 }
 
-# get_rsID_info <- function(region) {
-#   # filepath_dbSNP <- "https://ftp.ncbi.nih.gov/snp/organisms/human_9606/VCF/common_all_20180418.vcf.gz"
-#   filepath_dbSNP <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/dbSNP/common_all_20180418.vcf.gz"
-#   tabix_file <- TabixFile(filepath_dbSNP)
-#   region$CHR <- sub(23, "X", region$CHR)
-#   tabix_out <- scanTabix(tabix_file, param = with(region, GRanges(CHR, IRanges(locus_lower, locus_upper))))[[1]]
-#   df_dbSNP <- tabix_out %>%
-#     strsplit("\t") %>%
-#     do.call(rbind, .) %>%
-#     as.data.frame()
-#   if (nrow(df_dbSNP) == 0) {
-#     return(NULL)
-#   }
-#   col_names <- c("CHR", "POS", "rsID", "REF", "ALT")
-#   colnames(df_dbSNP)[1:5] <- col_names
-#   df_dbSNP <- df_dbSNP %>%
-#     separate_rows(ALT, sep = ",")
-#   df_dbSNP$POS <- as.numeric(df_dbSNP$POS)
-#   return(df_dbSNP[, col_names])
-# }
 
 complement_allele <- function(allele) {
   comp_map <- c("A" = "T", "T" = "A", "C" = "G", "G" = "C")
@@ -209,7 +132,7 @@ delete_files <- function(filepath) {
   file.remove(paste0(filepath, ".tbi"))
 }
 
-load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, WINDOW_SIZE, data_type = "quant", case_prop = NA) {
+load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, WINDOW_SIZE) {
   filepath <- paste0(data_dir, "/", risk_factor, "_", gene_of_interest, ".txt.gz")
   if (!file.exists(filepath)) download_files_FinnGen(gene_of_interest, risk_factor)
 
@@ -230,8 +153,7 @@ load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, WINDOW_SI
     chrom = CHR,
     position = POS,
     effect_AF = ALT_FREQ,
-    type = data_type,
-    s = case_prop,
+    type = "quant",
     pval = P,
     nlog10P = -log10(P),
     nsample = N,
@@ -431,20 +353,6 @@ load_liftOver_hg38ToHg19 <- function() {
 }
 
 
-load_liftOver_hg19ToHg38 <- function() {
-  filepath_liftOver <- "data/liftOver/hg19ToHg38.over.chain"
-  if (!file.exists(filepath_liftOver)) {
-    ensure_dir(dirname(filepath_liftOver))
-    cmd1 <- "wget https://hgdownload.soe.ucsc.edu/gbdb/hg19/liftOver/hg19ToHg38.over.chain.gz -O data/liftOver/hg19ToHg38.over.chain.gz"
-    cmd2 <- "gunzip data/liftOver/hg19ToHg38.over.chain.gz"
-    system(cmd1)
-    system(cmd2)
-  }
-  chain <- rtracklayer::import.chain(filepath_liftOver)
-  return(chain)
-}
-
-
 get_liftOver_hg38Tohg19 <- function(chrom, position) {
   this_chrom <- ifelse(grepl("^chr", chrom), chrom, paste0("chr", chrom))
   gr <- GenomicRanges::GRanges(
@@ -453,18 +361,6 @@ get_liftOver_hg38Tohg19 <- function(chrom, position) {
   )
   chain_hg38Tohg19 <- load_liftOver_hg38ToHg19()
   lifted_over <- rtracklayer::liftOver(gr, chain_hg38Tohg19)
-  return(as.data.frame(lifted_over)$end)
-}
-
-
-get_liftOver_hg19ToHg38 <- function(chrom, position) {
-  this_chrom <- ifelse(grepl("^chr", chrom), chrom, paste0("chr", chrom))
-  gr <- GenomicRanges::GRanges(
-    seqnames = this_chrom,
-    ranges = IRanges(start = position - 1, end = position)
-  )
-  chain_hg19ToHg38 <- load_liftOver_hg38ToHg19()
-  lifted_over <- rtracklayer::liftOver(gr, chain_hg19ToHg38)
   return(as.data.frame(lifted_over)$end)
 }
 
