@@ -78,30 +78,6 @@ list_genes <- merged$geneName
 
 ## Load summary data
 ```{r}
-ensure_dir("data/RData/CASE1/")
-data_dir <- "/home/seongwonhwang/Desktop/projects/git/pQTL_comparison/data/UKBB/CASE1"
-list_files_case1 <- sub("_group1.afreq", "", list.files(path = data_dir, pattern = "_group1.afreq"))
-names_risk_factor <- c("group1", "group2")
-
-for (gene_of_interest in list_files_case1) {
-  filepath_gwas_processed <- paste0("data/RData/CASE1/", gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")
-  file_g1 <- paste0(data_dir, "/", gene_of_interest, "_group1.afreq")
-  file_g2 <- paste0(data_dir, "/", gene_of_interest, "_group2.afreq")
-  if (!file.exists(file_g1) || !file.exists(file_g2)) next
-
-  if (!file.exists(filepath_gwas_processed)) {
-    list_data_subset <- list()
-
-    for (risk_factor in names_risk_factor) {
-      list_data_subset[[risk_factor]] <- load_CASE1(gene_of_interest, risk_factor, data_dir, WINDOW_SIZE)
-    }
-    saveRDS(list_data_subset, file = filepath_gwas_processed)
-  }
-}
-```
-
-## Load summary data
-```{r}
 names_risk_factor <- c("Somascan", "Olink")
 ensure_dir("data/RData/FinnGen/")
 data_dir <- "data/FinnGen/pQTL/downloaded/"
