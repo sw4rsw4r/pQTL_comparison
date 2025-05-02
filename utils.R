@@ -168,7 +168,7 @@ load_pQTL_Finngen <- function(gene_of_interest, risk_factor, WINDOW_SIZE) {
 }
 
 
-load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, WINDOW_SIZE, risk_factor = "Olink", data_type = "quant", case_prop = NA) {
+load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, WINDOW_SIZE) {
   # download files
   path_download <- "data/UKBB/UKB_PPP_pGWAS_summary_statistics"
   synGet(target_id, downloadLocation = path_download)
@@ -204,11 +204,10 @@ load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, WINDOW_SIZ
     chrom = paste0("chr", CHROM),
     position = GENPOS,
     effect_AF = A1FREQ,
-    type = data_type,
-    s = case_prop,
+    type = "quant",
     pval = 10**(-LOG10P),
     nlog10P = LOG10P,
-    nsample = N,
+    nsample = N
   ))
 
   # remove duplicated rsIDs

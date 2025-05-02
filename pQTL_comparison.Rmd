@@ -76,7 +76,7 @@ for (gene_of_interest in genes_FinnGen) {
 }
 ```
 
-# Download ukbiobank summary statistics
+## Download and process UKBB summary data
 ```{r}
 # Modify your config.json file to include your Synapse authentication token
 # The config.json file should look like this:
@@ -95,7 +95,7 @@ synapserutils::syncFromSynapse("syn51396727", path = "data/UKBB/Metadata/SNP_RSI
 # download summarystatistics
 files_gen <- synGetChildren("syn51365303")
 files_list <- as.list(files_gen)
-files_df <- data.frame(
+UKBB_info <- data.frame(
   id = sapply(files_list, function(x) x$id),
   name = sapply(files_list, function(x) x$name),
   type = sapply(files_list, function(x) x$type)
@@ -103,19 +103,18 @@ files_df <- data.frame(
   mutate(genename = sub("_.*", "", name)) %>%
   filter(genename %in% genes_FinnGen, !duplicated(genename))
 
-for (idx in 1:nrow(files_df)) {
-  gene_of_interest <- files_df[idx, "genename"]
-
-  filepath_gwas_processed <- paste0("data/RData/UKBB/", gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")
-  ensure_dir(dirname(filepath_gwas_processed))
+for (idx in 1:nrow(UKBB_info)) {
+  gene_of_interest <- UKBB_info[idx, "genename"]
+  filepath_gwas_processed <- file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS"))
+  
   if (!file.exists(filepath_gwas_processed)) {
-    target_id <- files_df[idx, "id"]
-    filename_tar <- files_df[idx, "name"]
-
-    res <- load_pQTL_UKBB(target_id, filename_tar, gene_of_interest, WINDOW_SIZE)
+    message("Processing ", gene_of_interest)
+    target_id <- UKBB_info[idx, "id"]
+    filename_tar <- UKBB_info[idx, "name"]
 
     list_data_subset <- list()
-    list_data_subset[["Olink"]] <- res
+    list_data_subset[["Olink"]] <- load_pQTL_UKBB(target_id, filename_tar, gene_of_interest, WINDOW_SIZE)
+    ensure_dir(dirname(filepath_gwas_processed))
     saveRDS(list_data_subset, file = filepath_gwas_processed)
   }
 }
@@ -129,7 +128,7 @@ df_EGA_studies <- df_EGA_studies %>%
   mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait))
 
 df_EGA_subset <- df_EGA_studies %>%
-  filter(genename %in% intersect(genes_FinnGen, files_df$genename)) %>%
+  filter(genename %in% intersect(genes_FinnGen, UKBB_info$genename)) %>%
   filter(!duplicated(genename))
 
 for (idx in 1:nrow(df_EGA_subset)) {
@@ -152,7 +151,7 @@ for (idx in 1:nrow(df_EGA_subset)) {
 ```
 
 ```{r}
-genes_UKBB_olink <- files_df$genename
+genes_UKBB_olink <- UKBB_info$genename
 genes_UKBB_somascan <- unique(df_EGA_studies$genename)
 genes_common <- Reduce(intersect, list(genes_UKBB_olink, genes_UKBB_somascan, genes_FinnGen))
 
