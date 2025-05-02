@@ -52,7 +52,7 @@ get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
 }
 
 
-download_files_FinnGen <- function(gene_of_interest, risk_factor) {
+download_files_FinnGen <- function(gene_of_interest, risk_factor, dir_download) {
   if (risk_factor == "Olink") {
     addr <- "https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Olink/pQTL/"
     filename <- paste0("Olink_Batch1_", gene_of_interest, ".txt.gz")
@@ -64,7 +64,6 @@ download_files_FinnGen <- function(gene_of_interest, risk_factor) {
     seqid <- subset(df_probe_somascan, geneName == gene_of_interest)$AptName[1]
     filename <- paste0("SomaScan_Batch2_", seqid, ".txt.gz")
   }
-  dir_download <- "data/FinnGen/pQTL/downloaded/"
   file_downloaded <- paste0(risk_factor, "_", gene_of_interest, ".txt.gz")
   cmd1 <- paste0("wget ", addr, filename, " -O ", dir_download, file_downloaded)
   cmd2 <- paste0("wget ", addr, filename, ".tbi -O ", dir_download, file_downloaded, ".tbi")
@@ -73,10 +72,10 @@ download_files_FinnGen <- function(gene_of_interest, risk_factor) {
 }
 
 
-complement_allele <- function(allele) {
-  comp_map <- c("A" = "T", "T" = "A", "C" = "G", "G" = "C")
-  return(comp_map[allele])
-}
+# complement_allele <- function(allele) {
+#   comp_map <- c("A" = "T", "T" = "A", "C" = "G", "G" = "C")
+#   return(comp_map[allele])
+# }
 
 read_tabix <- function(filepath, region) {
   tabix_file <- TabixFile(filepath)
@@ -107,7 +106,6 @@ read_tabix <- function(filepath, region) {
       N = as.numeric(N),
       POS = as.numeric(POS)
     )
-  # df_dbSNP <- get_rsID_info(region)
   df_UKBBrsIDmap <- vroom(paste0("data/UKBB/Metadata/SNP_RSID_maps/olink_rsid_map_mac5_info03_b0_7_chr", region$CHR, "_patched_v2.tsv.gz")) %>%
     mutate(
       CHR = this_chrom,
@@ -118,12 +116,12 @@ read_tabix <- function(filepath, region) {
   df_merged <- df_pQTL %>%
     inner_join(df_UKBBrsIDmap, by = c("CHR", "POS", "REF", "ALT"))
 
-  if (nrow(df_UKBBrsIDmap) != 0 && nrow(df_merged) == 0) {
-    df_UKBBrsIDmap$REF <- sapply(df_UKBBrsIDmap$REF, complement_allele)
-    df_UKBBrsIDmap$ALT <- sapply(df_UKBBrsIDmap$ALT, complement_allele)
-    df_merged <- df_pQTL %>%
-      inner_join(df_UKBBrsIDmap, by = c("CHR", "POS", "REF", "ALT"))
-  }
+  # if (nrow(df_UKBBrsIDmap) != 0 && nrow(df_merged) == 0) {
+  #   df_UKBBrsIDmap$REF <- sapply(df_UKBBrsIDmap$REF, complement_allele)
+  #   df_UKBBrsIDmap$ALT <- sapply(df_UKBBrsIDmap$ALT, complement_allele)
+  #   df_merged <- df_pQTL %>%
+  #     inner_join(df_UKBBrsIDmap, by = c("CHR", "POS", "REF", "ALT"))
+  # }
   return(df_merged)
 }
 
@@ -132,9 +130,11 @@ delete_files <- function(filepath) {
   file.remove(paste0(filepath, ".tbi"))
 }
 
-load_pQTL_Finngen <- function(gene_of_interest, risk_factor, data_dir, WINDOW_SIZE) {
-  filepath <- paste0(data_dir, "/", risk_factor, "_", gene_of_interest, ".txt.gz")
-  if (!file.exists(filepath)) download_files_FinnGen(gene_of_interest, risk_factor)
+load_pQTL_Finngen <- function(gene_of_interest, risk_factor, WINDOW_SIZE) {
+  dir_download <- "data/FinnGen/pQTL/downloaded/"
+  ensure_dir(dir_download)
+  filepath <- paste0(dir_download, "/", risk_factor, "_", gene_of_interest, ".txt.gz")
+  if (!file.exists(filepath)) download_files_FinnGen(gene_of_interest, risk_factor, dir_download)
 
   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
   df_pQTL <- read_tabix(filepath, region)
@@ -503,18 +503,18 @@ load_ld_mat_FinnGen <- function(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_
         return(data.frame())
       }
     )
-    if (nrow(df_merged) == 0) {
-      df_UKBBrsIDmap$REF <- sapply(df_UKBBrsIDmap$REF, complement_allele)
-      df_UKBBrsIDmap$ALT <- sapply(df_UKBBrsIDmap$ALT, complement_allele)
-      df_UKBBrsIDmap <- df_UKBBrsIDmap %>% mutate(ID = paste0("chr", CHR, "_", POS, "_", REF, "_", ALT))
-      df_merged <- df_LD_filt %>%
-        inner_join(df_UKBBrsIDmap, by = c("ID1" = "ID")) %>%
-        dplyr::rename(snp = rsid) %>%
-        inner_join(df_UKBBrsIDmap[, c("ID", "rsid")], by = c("ID2" = "ID")) %>%
-        dplyr::rename(snp2 = rsid) %>%
-        dplyr::select(-ID1, -ID2) %>%
-        distinct()
-    }
+    # if (nrow(df_merged) == 0) {
+    #   df_UKBBrsIDmap$REF <- sapply(df_UKBBrsIDmap$REF, complement_allele)
+    #   df_UKBBrsIDmap$ALT <- sapply(df_UKBBrsIDmap$ALT, complement_allele)
+    #   df_UKBBrsIDmap <- df_UKBBrsIDmap %>% mutate(ID = paste0("chr", CHR, "_", POS, "_", REF, "_", ALT))
+    #   df_merged <- df_LD_filt %>%
+    #     inner_join(df_UKBBrsIDmap, by = c("ID1" = "ID")) %>%
+    #     dplyr::rename(snp = rsid) %>%
+    #     inner_join(df_UKBBrsIDmap[, c("ID", "rsid")], by = c("ID2" = "ID")) %>%
+    #     dplyr::rename(snp2 = rsid) %>%
+    #     dplyr::select(-ID1, -ID2) %>%
+    #     distinct()
+    # }
 
     ld_meta <- df_merged %>%
       dplyr::rename(effect = ALT, other = REF) %>%
@@ -929,7 +929,7 @@ run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, li
     LD_type = LD_type,
     dir_output = dir_output
   )
-  
+
   # Run colocalization analyses
   run_coloc(res, dir_output)
   run_susie(res, dir_output)
