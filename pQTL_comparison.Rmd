@@ -114,15 +114,15 @@ for (idx in 1:nrow(UKBB_info)) {
     target_id <- UKBB_info[idx, "id"]
     filename_tar <- UKBB_info[idx, "name"]
 
-    list_data_subset <- list()
-    list_data_subset[["Olink"]] <- load_pQTL_UKBB(target_id, filename_tar, gene_of_interest, WINDOW_SIZE)
+    data_UKBB <- list()
+    data_UKBB[["Olink"]] <- load_pQTL_UKBB(target_id, filename_tar, gene_of_interest, WINDOW_SIZE)
     ensure_dir(dirname(filepath_gwas_processed))
-    saveRDS(list_data_subset, file = filepath_gwas_processed)
+    saveRDS(data_UKBB, file = filepath_gwas_processed)
   }
 }
 ```
 
-
+## Download and process EGA summary data
 ```{r}
 EGA_info <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
 # This file was obtained from the following URL: https://www.ebi.ac.uk/gwas/publications/29875488.
@@ -135,9 +135,6 @@ EGA_subset <- EGA_info %>%
 
 for (idx in 1:nrow(EGA_subset)) {
   gene_of_interest <- EGA_subset[idx, "genename"]
-  region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
-  if (region$CHR != "X") next
-
   filepath_gwas_processed <- file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS"))
   if (!file.exists(filepath_gwas_processed)) {
     message("Processing ", gene_of_interest)
@@ -145,26 +142,22 @@ for (idx in 1:nrow(EGA_subset)) {
     addr <- EGA_subset[idx, "summaryStatistics"]
     filepath <- paste0(addr, "/harmonised/", accessionId, ".h.tsv.gz")
 
-    list_data_subset <- list()
-    list_data_subset[["Somascan"]] <- load_pQTL_EGA(gene_of_interest, filepath, WINDOW_SIZE)
+    data_EGA <- list()
+    data_EGA[["Somascan"]] <- load_pQTL_EGA(gene_of_interest, filepath, WINDOW_SIZE)
     ensure_dir(dirname(filepath_gwas_processed))
-    saveRDS(list_data_subset, file = filepath_gwas_processed)
+    saveRDS(data_EGA, file = filepath_gwas_processed)
   }
 }
 ```
 
+## Gene filtering step
 ```{r}
-genes_UKBB_olink <- UKBB_info$genename
-genes_UKBB_somascan <- unique(EGA_info$genename)
-genes_common <- Reduce(intersect, list(genes_UKBB_olink, genes_UKBB_somascan, genes_FinnGen))
+genes_common <- Reduce(intersect, list(UKBB_info$genename, EGA_info$genename, genes_FinnGen))
 
 # https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
-MHC <- list(
-  CHR = 6,
-  start = 28510120,
-  end = 33480577
-)
-gene_regions <- as.data.frame(do.call(rbind, lapply(genes_common, function(g) get_gene_region_GRCh38_UKBB(g, window_size))))
+MHC <- list(CHR = 6, start = 28510120, end = 33480577)
+
+gene_regions <- as.data.frame(do.call(rbind, lapply(genes_common, function(g) get_gene_region_GRCh38_UKBB(g, WINDOW_SIZE))))
 genes_in_MHC <- genes_common[gene_regions$CHR == MHC$CHR & gene_regions$locus_lower > MHC$start & gene_regions$locus_upper < MHC$end]
 genes_Xchr <- genes_common[gene_regions$CHR == "X"]
 
@@ -172,43 +165,32 @@ filtered_genes <- setdiff(genes_common, genes_in_MHC) # 1132 genes left
 filtered_genes <- setdiff(filtered_genes, genes_Xchr) # 1100 genes left
 
 pval_cutoff <- 1e-08
-filt_FinnGen_soma <- filt_FinnGen_olink <- filt_UKBB_olink <- filt_EGA_soma <- NULL
+required_dataset_count <- 4
+
+genes_final <- NULL
 for (gene_of_interest in filtered_genes) {
-  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
-  data_UKB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
+  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
+  data_UKBB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))
+  data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS")))
 
-  if (gene_of_interest == "TYRO3") { # No SNP remain in this gene region in the EGA data
-    filt_EGA_soma <- c(filt_EGA_soma, F)
-  } else {
-    data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
-    filt_EGA_soma <- c(filt_EGA_soma, nrow(subset(data_EGA[["Somascan"]], pval < pval_cutoff)) > 0)
+  if (check_significant_hits(data_FinnGen, gene_of_interest, "Olink") &&
+    check_significant_hits(data_FinnGen, gene_of_interest, "Somascan") &&
+    check_significant_hits(data_UKBB, gene_of_interest, "Olink") &&
+    check_significant_hits(data_EGA, gene_of_interest, "Somascan")) {
+    genes_final <- c(genes_final, gene_of_interest)
   }
-
-  filt_FinnGen_soma <- c(filt_FinnGen_soma, nrow(subset(data_FinnGen[["Somascan"]], pval < pval_cutoff)) > 0)
-  filt_FinnGen_olink <- c(filt_FinnGen_olink, nrow(subset(data_FinnGen[["Olink"]], pval < pval_cutoff)) > 0)
-  filt_UKBB_olink <- c(filt_UKBB_olink, nrow(subset(data_UKB[["Olink"]], pval < pval_cutoff)) > 0)
 }
-df_genes <- data.frame(
-  filt_FinnGen_soma,
-  filt_FinnGen_olink,
-  filt_UKBB_olink,
-  filt_EGA_soma
-)
-rownames(df_genes) <- filtered_genes
-# write.table(df_genes, "gene_list.txt", quote = F, col.names = T, row.names = T, sep = "\t")
-
-filtered_g5 <- rownames(df_genes[apply(df_genes, 1, sum) == 4, ])
 ```
 
 # Analysis - CASE1 and CASE2F/U
 ```{r}
-for (gene_of_interest in filtered_g5) {
+for (gene_of_interest in genes_final) {
   cat("Processing gene:", gene_of_interest, "\n")
 
-  data_CASE1 <- readRDS(file.path(BASE_DATA_DIR, "CASE1", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
-  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
-  data_UKB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
-  data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
+  data_CASE1 <- readRDS(file.path(BASE_DATA_DIR, "CASE1", paste0(gene_of_interest, "_processed.RDS")))
+  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
+  data_UKB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))
+  data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS")))
 
   run_colocalization_analysis("CASE1", gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = "UKBB")
   run_colocalization_analysis("CASE2F", gene_of_interest, WINDOW_SIZE, data_FinnGen, LD_type = "FinnGen")
@@ -224,12 +206,12 @@ for (gene_of_interest in filtered_g5) {
 # Analysis - CASE3
 ```{r}
 runID <- "CASE3"
-for (gene_of_interest in filtered_g5) {
+for (gene_of_interest in genes_final) {
   cat("Processing gene:", gene_of_interest, "\n")
   dir_results <- file.path("results", runID, paste0("window_", WINDOW_SIZE), gene_of_interest)
 
-  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
-  data_UKB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
+  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
+  data_UKB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))
 
   data_CASE3 <- list(
     FinnGen = data_FinnGen$Olink,
@@ -269,12 +251,12 @@ for (gene_of_interest in filtered_g5) {
 ```{r}
 runID <- "CASE4"
 # DPP7 - Only 2 SNPs left. Error in run_propcoloc_Wallace
-for (gene_of_interest in filtered_g5) {
+for (gene_of_interest in genes_final) {
   cat("Processing gene:", gene_of_interest, "\n")
   dir_results <- file.path("results", runID, paste0("window_", WINDOW_SIZE), gene_of_interest)
 
-  data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
-  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")))
+  data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS")))
+  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
 
   data_CASE4 <- list(
     FinnGen = data_FinnGen$Somascan,
