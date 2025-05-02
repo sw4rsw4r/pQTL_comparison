@@ -91,6 +91,8 @@ auth_token <- config$synapse_token
 synLogin(authToken = auth_token)
 # Download the rsID mapping files from Synapse
 synapserutils::syncFromSynapse("syn51396727", path = "data/UKBB/Metadata/SNP_RSID_maps")
+# Download the protein annotation file from Synapse
+synapserutils::syncFromSynapse("syn51396728", path = "data/UKBB/Metadata/Protein_annotation")
 
 # download summarystatistics
 files_gen <- synGetChildren("syn51365303")
@@ -106,7 +108,7 @@ UKBB_info <- data.frame(
 for (idx in 1:nrow(UKBB_info)) {
   gene_of_interest <- UKBB_info[idx, "genename"]
   filepath_gwas_processed <- file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS"))
-  
+
   if (!file.exists(filepath_gwas_processed)) {
     message("Processing ", gene_of_interest)
     target_id <- UKBB_info[idx, "id"]
@@ -122,37 +124,38 @@ for (idx in 1:nrow(UKBB_info)) {
 
 
 ```{r}
-ensure_dir("data/RData/EGA/")
-df_EGA_studies <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
-df_EGA_studies <- df_EGA_studies %>%
+EGA_info <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
+# This file was obtained from the following URL: https://www.ebi.ac.uk/gwas/publications/29875488.
+EGA_info <- EGA_info %>%
   mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait))
 
-df_EGA_subset <- df_EGA_studies %>%
+EGA_subset <- EGA_info %>%
   filter(genename %in% intersect(genes_FinnGen, UKBB_info$genename)) %>%
   filter(!duplicated(genename))
 
-for (idx in 1:nrow(df_EGA_subset)) {
-  gene_of_interest <- df_EGA_studies[idx, "genename"]
+for (idx in 1:nrow(EGA_subset)) {
+  gene_of_interest <- EGA_subset[idx, "genename"]
   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
-  if (region$CHR == "X") next
-  accessionId <- df_EGA_studies[idx, "accessionId"]
-  addr <- df_EGA_studies[idx, "summaryStatistics"]
-  filepath <- paste0(addr, "/harmonised/", accessionId, ".h.tsv.gz")
+  if (region$CHR != "X") next
 
-  filepath_gwas_processed <- paste0("data/RData/EGA/", gene_of_interest, "_window_", WINDOW_SIZE, "_processed.RDS")
-
+  filepath_gwas_processed <- file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS"))
   if (!file.exists(filepath_gwas_processed)) {
-    list_data_subset <- list()
+    message("Processing ", gene_of_interest)
+    accessionId <- EGA_subset[idx, "accessionId"]
+    addr <- EGA_subset[idx, "summaryStatistics"]
+    filepath <- paste0(addr, "/harmonised/", accessionId, ".h.tsv.gz")
 
+    list_data_subset <- list()
     list_data_subset[["Somascan"]] <- load_pQTL_EGA(gene_of_interest, filepath, WINDOW_SIZE)
-    if (!is.null(list_data_subset[["Somascan"]])) saveRDS(list_data_subset, file = filepath_gwas_processed)
+    ensure_dir(dirname(filepath_gwas_processed))
+    saveRDS(list_data_subset, file = filepath_gwas_processed)
   }
 }
 ```
 
 ```{r}
 genes_UKBB_olink <- UKBB_info$genename
-genes_UKBB_somascan <- unique(df_EGA_studies$genename)
+genes_UKBB_somascan <- unique(EGA_info$genename)
 genes_common <- Reduce(intersect, list(genes_UKBB_olink, genes_UKBB_somascan, genes_FinnGen))
 
 # https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC

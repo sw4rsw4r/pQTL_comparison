@@ -25,6 +25,7 @@ ensure_dir <- function(dirpath) {
 }
 
 get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
+  # This file was downloaded from the following URL: https://www.synapse.org/Synapse:syn51396728
   df_anno <- vroom("data/UKBB/Metadata/Protein_annotation/olink_protein_map_3k_v1.tsv")
 
   if (gene_of_interest == "MYLPF") {
@@ -281,7 +282,7 @@ add_AF <- function(res) {
 }
 
 
-load_pQTL_EGA <- function(gene_of_interest, filepath, WINDOW_SIZE, data_type = "quant", case_prop = NA) {
+load_pQTL_EGA <- function(gene_of_interest, filepath, WINDOW_SIZE) {
   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
   filename <- paste0("data/EGA/", gene_of_interest, ".txt")
   if (!file.exists(filename)) {
@@ -316,18 +317,14 @@ load_pQTL_EGA <- function(gene_of_interest, filepath, WINDOW_SIZE, data_type = "
       chrom = chromosome,
       position = base_pair_location,
       effect_AF = effect_allele_frequency,
-      type = data_type,
-      s = case_prop,
+      type = "quant",
       pval = p_value,
       nlog10P = `log(P)`,
-      nsample = 3301,
+      nsample = 3301
     ))
-  } else {
-    stop("stop")
   }
   file.remove(filename)
   if (all(is.na(res$effect_AF))) res <- add_AF(res)
-  if (sum(sapply(res, function(x) all(is.na(x)))) > 1) stop("stop")
 
   # remove duplicated rsIDs
   res_sorted <- res[order(abs(res$beta), decreasing = T), ]
