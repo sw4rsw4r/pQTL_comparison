@@ -36,7 +36,7 @@ suppressMessages(library(colocPropTest))
 # devtools::install_github("kassambara/easyGgplot2")
 suppressMessages(library(easyGgplot2))
 # remotes::install_github("daynefiler/gnomadR")
-library(gnomadR)
+suppressMessages(library(gnomadR))
 
 suppressMessages(library(reticulate))
 # install.packages("synapser", repos = c("http://ran.synapse.org", "https://cloud.r-project.org"))
@@ -64,7 +64,7 @@ for (gene_of_interest in genes_FinnGen) {
   filepath_gwas_processed <- file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS"))
 
   if (!file.exists(filepath_gwas_processed)) {
-    message("Processing ", gene_of_interest)
+    # message("Processing ", gene_of_interest)
     data_FinnGen <- list()
 
     for (risk_factor in c("Somascan", "Olink")) {
@@ -78,21 +78,7 @@ for (gene_of_interest in genes_FinnGen) {
 
 ## Download and process UKBB summary data
 ```{r}
-# Modify your config.json file to include your Synapse authentication token
-# The config.json file should look like this:
-# {
-#   "synapse_token": "your_token_here"
-# }
-# Load the configuration from config.json file
-config <- fromJSON("config.json")
-# Retrieve the Synapse authentication token from the configuration file
-auth_token <- config$synapse_token
-# Login to Synapse using the token
-synLogin(authToken = auth_token)
-# Download the rsID mapping files from Synapse
-synapserutils::syncFromSynapse("syn51396727", path = "data/UKBB/Metadata/SNP_RSID_maps")
-# Download the protein annotation file from Synapse
-synapserutils::syncFromSynapse("syn51396728", path = "data/UKBB/Metadata/Protein_annotation")
+download_metadata()
 
 # download summarystatistics
 files_gen <- synGetChildren("syn51365303")
@@ -110,7 +96,7 @@ for (idx in 1:nrow(UKBB_info)) {
   filepath_gwas_processed <- file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS"))
 
   if (!file.exists(filepath_gwas_processed)) {
-    message("Processing ", gene_of_interest)
+    # message("Processing ", gene_of_interest)
     target_id <- UKBB_info[idx, "id"]
     filename_tar <- UKBB_info[idx, "name"]
 
@@ -137,7 +123,7 @@ for (idx in 1:nrow(EGA_subset)) {
   gene_of_interest <- EGA_subset[idx, "genename"]
   filepath_gwas_processed <- file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS"))
   if (!file.exists(filepath_gwas_processed)) {
-    message("Processing ", gene_of_interest)
+    # message("Processing ", gene_of_interest)
     accessionId <- EGA_subset[idx, "accessionId"]
     addr <- EGA_subset[idx, "summaryStatistics"]
     filepath <- paste0(addr, "/harmonised/", accessionId, ".h.tsv.gz")
@@ -157,7 +143,7 @@ genes_common <- Reduce(intersect, list(UKBB_info$genename, EGA_info$genename, ge
 # https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
 MHC <- list(CHR = 6, start = 28510120, end = 33480577)
 
-gene_regions <- as.data.frame(do.call(rbind, lapply(genes_common, function(g) get_gene_region_GRCh38_UKBB(g, WINDOW_SIZE))))
+gene_regions <- do.call(rbind, lapply(genes_common, function(g) as.data.frame(get_gene_region_GRCh38_UKBB(g, WINDOW_SIZE))))
 genes_in_MHC <- genes_common[gene_regions$CHR == MHC$CHR & gene_regions$locus_lower > MHC$start & gene_regions$locus_upper < MHC$end]
 genes_Xchr <- genes_common[gene_regions$CHR == "X"]
 
@@ -185,7 +171,7 @@ for (gene_of_interest in filtered_genes) {
 ## Run_colocalization_analysis
 ```{r}
 for (gene_of_interest in genes_final) {
-  cat("Processing gene:", gene_of_interest, "\n")
+  # cat("Processing gene:", gene_of_interest, "\n")
 
   data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
   data_UKBB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))

@@ -1,22 +1,22 @@
 options(scipen = -1)
-library(Rmpfr)
-library(dplyr)
-library(ggplot2)
-library(tidyr)
-library(dplyr)
-library(vroom)
-library(rtracklayer)
-library(ggplot2)
-library(reshape2)
-library(curl)
-library(MendelianRandomization)
-library(coloc)
-library(susieR)
-library(Rsamtools)
-library(stringr)
-library(combinat)
-library(hash)
-library(jsonlite)
+suppressMessages(library(Rmpfr))
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(tidyr))
+suppressMessages(library(dplyr))
+suppressMessages(library(vroom))
+suppressMessages(library(rtracklayer))
+suppressMessages(library(ggplot2))
+suppressMessages(library(reshape2))
+suppressMessages(library(curl))
+suppressMessages(library(MendelianRandomization))
+suppressMessages(library(coloc))
+suppressMessages(library(susieR))
+suppressMessages(library(Rsamtools))
+suppressMessages(library(stringr))
+suppressMessages(library(combinat))
+suppressMessages(library(hash))
+suppressMessages(library(jsonlite))
 
 ensure_dir <- function(dirpath) {
   if (!file.exists(dirpath)) {
@@ -26,7 +26,7 @@ ensure_dir <- function(dirpath) {
 
 get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   # This file was downloaded from the following URL: https://www.synapse.org/Synapse:syn51396728
-  df_anno <- vroom("data/UKBB/Metadata/Protein_annotation/olink_protein_map_3k_v1.tsv")
+  df_anno <- vroom("data/UKBB/Metadata/Protein_annotation/olink_protein_map_3k_v1.tsv", show_col_types = FALSE)
 
   if (gene_of_interest == "MYLPF") {
     gene_of_interest0 <- "MYL11"
@@ -52,6 +52,26 @@ get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   return(res)
 }
 
+download_metadata <- function(){
+  # Modify your config.json file to include your Synapse authentication token
+  # The config.json file should look like this:
+  # {
+  #   "synapse_token": "your_token_here"
+  # }
+  # Load the configuration from config.json file
+  config <- fromJSON("config.json")
+  # Retrieve the Synapse authentication token from the configuration file
+  auth_token <- config$synapse_token
+  # Login to Synapse using the token
+  synLogin(authToken = auth_token)
+
+  path_SNP_RSID_maps = "data/UKBB/Metadata/SNP_RSID_maps"
+  path_Protein_annotation = "data/UKBB/Metadata/Protein_annotation"
+  # Download the rsID mapping files from Synapse
+  synapserutils::syncFromSynapse("syn51396727", path = path_SNP_RSID_maps)
+  # Download the protein annotation file from Synapse
+  synapserutils::syncFromSynapse("syn51396728", path = path_Protein_annotation)
+}
 
 download_files_FinnGen <- function(gene_of_interest, risk_factor, dir_download) {
   if (risk_factor == "Olink") {
