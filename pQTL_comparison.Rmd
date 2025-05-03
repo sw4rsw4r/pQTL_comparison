@@ -182,115 +182,38 @@ for (gene_of_interest in filtered_genes) {
 }
 ```
 
-# Analysis - CASE1 and CASE2F/U
+## Run_colocalization_analysis
 ```{r}
 for (gene_of_interest in genes_final) {
   cat("Processing gene:", gene_of_interest, "\n")
+
+  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
+  data_UKBB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))
+  data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS")))
 
   data_CASE1 <- readRDS(file.path(BASE_DATA_DIR, "CASE1", paste0(gene_of_interest, "_processed.RDS")))
-  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
-  data_UKB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))
-  data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS")))
-
-  run_colocalization_analysis("CASE1", gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = "UKBB")
-  run_colocalization_analysis("CASE2F", gene_of_interest, WINDOW_SIZE, data_FinnGen, LD_type = "FinnGen")
-
+  data_CASE2F <- data_FinnGen
   data_CASE2U <- list(
-    Olink = data_UKB$Olink,
+    Olink = data_UKBB$Olink,
     Somascan = data_EGA$Somascan
   )
-  run_colocalization_analysis("CASE2U", gene_of_interest, WINDOW_SIZE, data_CASE2U, LD_type = "UKBB")
-}
-```
-
-# Analysis - CASE3
-```{r}
-runID <- "CASE3"
-for (gene_of_interest in genes_final) {
-  cat("Processing gene:", gene_of_interest, "\n")
-  dir_results <- file.path("results", runID, paste0("window_", WINDOW_SIZE), gene_of_interest)
-
-  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
-  data_UKB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))
-
   data_CASE3 <- list(
     FinnGen = data_FinnGen$Olink,
-    UKBB = data_UKB$Olink
+    UKBB = data_UKBB$Olink
   )
-  res <- harmonize(
-    runID = runID,
-    gene_of_interest, WINDOW_SIZE,
-    data_CASE3,
-    LD_type = c("FinnGen", "UKBB"),
-    dir_output = dir_results
-  )
-  LD_UKBB <- res[["UKBB"]]$LD
-  LD_FinnGen <- res[["FinnGen"]]$LD
-
-  run_coloc(res, dir_results)
-  run_susie(res, dir_results)
-
-  runID0 <- "CASE3_FinnGenLD"
-  dir_results0 <- file.path("results", runID0, paste0("window_", WINDOW_SIZE), gene_of_interest)
-  res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_FinnGen
-  run_colocProp(res, dir_results0)
-  run_propcoloc_Wallace(res, dir_results0)
-  run_susie(res, dir_results0)
-
-  runID0 <- "CASE3_UKBBLD"
-  dir_results0 <- file.path("results", runID0, paste0("window_", WINDOW_SIZE), gene_of_interest)
-  res[["UKBB"]]$LD <- res[["FinnGen"]]$LD <- LD_UKBB
-  run_colocProp(res, dir_results0)
-  run_propcoloc_Wallace(res, dir_results0)
-  run_susie(res, dir_results0)
-}
-```
-
-
-# CASE4
-```{r}
-runID <- "CASE4"
-# DPP7 - Only 2 SNPs left. Error in run_propcoloc_Wallace
-for (gene_of_interest in genes_final) {
-  cat("Processing gene:", gene_of_interest, "\n")
-  dir_results <- file.path("results", runID, paste0("window_", WINDOW_SIZE), gene_of_interest)
-
-  data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS")))
-  data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
-
   data_CASE4 <- list(
     FinnGen = data_FinnGen$Somascan,
     EGA = data_EGA$Somascan
   )
-  res <- harmonize(
-    runID = runID,
-    gene_of_interest, WINDOW_SIZE,
-    data_CASE4,
-    LD_type = c("FinnGen", "UKBB"),
-    dir_output = dir_results
-  )
-  LD_UKBB <- res[["EGA"]]$LD
-  LD_FinnGen <- res[["FinnGen"]]$LD
-
-  run_coloc(res, dir_results)
-  run_susie(res, dir_results)
-
-  runID0 <- "CASE4_FinnGenLD"
-  dir_results0 <- file.path("results", runID0, paste0("window_", WINDOW_SIZE), gene_of_interest)
-  res[["EGA"]]$LD <- res[["FinnGen"]]$LD <- LD_FinnGen
-  run_colocProp(res, dir_results0)
-  run_propcoloc_Wallace(res, dir_results0)
-  run_susie(res, dir_results0)
-
-  runID0 <- "CASE4_UKBBLD"
-  dir_results0 <- file.path("results", runID0, paste0("window_", WINDOW_SIZE), gene_of_interest)
-  res[["EGA"]]$LD <- res[["FinnGen"]]$LD <- LD_UKBB
-  run_colocProp(res, dir_results0)
-  run_propcoloc_Wallace(res, dir_results0)
-  run_susie(res, dir_results0)
+  run_colocalization_analysis("CASE1", gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = "UKBB")
+  run_colocalization_analysis("CASE2F", gene_of_interest, WINDOW_SIZE, data_CASE2F, LD_type = "FinnGen")
+  run_colocalization_analysis("CASE2U", gene_of_interest, WINDOW_SIZE, data_CASE2U, LD_type = "UKBB")
+  run_colocalization_analysis("CASE3", gene_of_interest, WINDOW_SIZE, data_CASE3, LD_type = c("FinnGen", "UKBB"))
+  run_colocalization_analysis("CASE4", gene_of_interest, WINDOW_SIZE, data_CASE4, LD_type = c("FinnGen", "UKBB"))
 }
 ```
 
+## Combine results
 ```{r}
 combined <- bind_rows(
   get_all_results("CASE1", c("group1", "group2"), WINDOW_SIZE),

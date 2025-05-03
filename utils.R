@@ -334,6 +334,10 @@ load_pQTL_EGA <- function(gene_of_interest, filepath, WINDOW_SIZE) {
   return(res_final)
 }
 
+check_significant_hits <- function(dataset, gene, platform) {
+  nrow(subset(dataset[[platform]], pval < pval_cutoff)) > 0
+}
+
 
 load_liftOver_hg38ToHg19 <- function() {
   filepath_liftOver <- "data/liftOver/hg38ToHg19.over.chain"
@@ -615,7 +619,7 @@ harmonize <- function(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type, 
 }
 
 
-run_colocProp <- function(res, dir_results, this_J = 10) {
+run_propcoloc <- function(res, dir_results, this_J = 10) {
   RF1 <- res$names$risk_factors[1]
   RF2 <- res$names$risk_factors[2]
 
@@ -763,11 +767,11 @@ run_susie <- function(res, dir_results) {
 }
 
 
-run_propcoloc_Wallace <- function(res, dir_results) {
+run_colocPropTest <- function(res, dir_results) {
   RF1 <- res$names$risk_factors[1]
   RF2 <- res$names$risk_factors[2]
 
-  fname_output <- file.path(dir_results, "propcoloc_Wallace", "propcoloc_Wallace.txt")
+  fname_output <- file.path(dir_results, "colocPropTest", "colocPropTest.txt")
   ensure_dir(dirname(fname_output))
   # if (file.exists(fname_output)) {
   #   return()
@@ -845,9 +849,9 @@ get_colocPropTest_res <- function(dir_results, list_factors) {
   RF1 <- list_factors[1]
   RF2 <- list_factors[2]
 
-  fname_wallace <- file.path(dir_results, "propcoloc_Wallace", "propcoloc_Wallace.txt")
-  if (file.exists(fname_wallace) && file.info(fname_wallace)$size > 1) {
-    df1 <- read.delim(fname_wallace)
+  fname_colocPropTest <- file.path(dir_results, "colocPropTest", "colocPropTest.txt")
+  if (file.exists(fname_colocPropTest) && file.info(fname_colocPropTest)$size > 1) {
+    df1 <- read.delim(fname_colocPropTest)
     res_temp <- data.frame(RF1 = RF1, RF2 = RF2, min_p = min(df1$p), min_fdr = min(df1$fdr))
     res_colocPropTest <- ifelse(res_temp$min_fdr > 0.05, "coloc", "non_coloc")
   }
@@ -863,25 +867,25 @@ get_all_results <- function(runID, names_risk_factor, WINDOW_SIZE) {
     res_propcoloc <- get_propcoloc_res(dir_results, names_risk_factor)
     res_susie <- get_susie_res(dir_results, names_risk_factor)
     res_coloc <- get_coloc_res(dir_results, names_risk_factor)
-    res_wallace <- get_colocPropTest_res(dir_results, names_risk_factor)
+    res_colocPropTest <- get_colocPropTest_res(dir_results, names_risk_factor)
 
     merged <- rbind(merged, data.frame(
       gene = gene_of_interest,
       propcoloc = res_propcoloc,
       coloc = res_coloc,
       susie = res_susie,
-      wallace = res_wallace
+      colocPropTest = res_colocPropTest
     ))
   }
 
   summary_coloc <- t(data.frame(prop.table(table(factor(merged$coloc, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
   summary_susie <- t(data.frame(prop.table(table(factor(merged$susie, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
   summary_propcoloc <- t(data.frame(prop.table(table(factor(merged$propcoloc, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
-  summary_wallace <- t(data.frame(prop.table(table(factor(merged$wallace, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
-  summary_combined <- Reduce("cbind", list(summary_coloc, summary_susie, summary_propcoloc, summary_wallace))
+  summary_colocPropTest <- t(data.frame(prop.table(table(factor(merged$colocPropTest, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
+  summary_combined <- Reduce("cbind", list(summary_coloc, summary_susie, summary_propcoloc, summary_colocPropTest))
   summary_combined <- data.frame(runID, summary_combined)
 
-  methods <- c("coloc", "susie", "propcoloc", "wallace")
+  methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
   categories <- c("coloc", "non_coloc", "insufficient")
   cat_abbr <- c("C", "NC", "IS")
 
@@ -916,19 +920,33 @@ get_all_results <- function(runID, names_risk_factor, WINDOW_SIZE) {
 }
 
 run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type) {
-  dir_output <- file.path("results", runID, paste0("window_", WINDOW_SIZE), gene_of_interest)
-  res <- harmonize(
-    runID = runID,
-    gene_of_interest = gene_of_interest,
-    WINDOW_SIZE = WINDOW_SIZE,
-    list_data = list_data,
-    LD_type = LD_type,
-    dir_output = dir_output
-  )
+  dir_output <- file.path("results", runID, gene_of_interest)
+  res <- harmonize(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type, dir_output)
 
-  # Run colocalization analyses
-  run_coloc(res, dir_output)
-  run_susie(res, dir_output)
-  run_colocProp(res, dir_output)
-  run_propcoloc_Wallace(res, dir_output)
+  if (length(LD_type) == 1) {
+    run_coloc(res, dir_output)
+    run_susie(res, dir_output)
+    run_propcoloc(res, dir_output)
+    run_colocPropTest(res, dir_output)
+  } else if (length(LD_type) == 2) {
+    LD_UKBB <- res[names(res) %in% c("EGA", "UKBB")][[1]]$LD
+    LD_FinnGen <- res[["FinnGen"]]$LD
+
+    run_coloc(res, dir_output)
+    run_susie(res, dir_output)
+
+    runID0 <- paste0(runID, "_UKBBLD")
+    dir_output0 <- file.path("results", runID0, gene_of_interest)
+    res[[1]]$LD <- res[[2]]$LD <- LD_UKBB
+    run_propcoloc(res, dir_output0)
+    run_colocPropTest(res, dir_output0)
+    run_susie(res, dir_output0)
+
+    runID1 <- paste0(runID, "_FinnGenLD")
+    dir_output1 <- file.path("results", runID1, gene_of_interest)
+    res[[1]]$LD <- res[[1]]$LD <- LD_FinnGen
+    run_propcoloc(res, dir_output1)
+    run_colocPropTest(res, dir_output1)
+    run_susie(res, dir_output1)
+  }
 }
