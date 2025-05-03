@@ -403,7 +403,7 @@ download_files_LD_UKBB <- function(filepath_ld) {
 
 load_ld_mat_UKBB <- function(gene_of_interest, WINDOW_SIZE, rsids_to_keep, dir_output) {
   dir_LD <- "data/UKBB/ld_matrix"
-  filename_LD <- file.path(dir_output, "LD", "UKBB", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_LD.RDS"))
+  filename_LD <- file.path(dir_output, "LD", "UKBB", paste0(gene_of_interest, "_LD.RDS"))
   ensure_dir(dirname(filename_LD))
   if (file.exists(filename_LD)) {
     LD <- readRDS(filename_LD)
@@ -453,7 +453,7 @@ harmonize_ld <- function(ld_mat, ld_merged) {
 
 load_ld_mat_FinnGen <- function(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_output) {
   dir_LD <- "data/FinnGen/ld_matrix/"
-  filename_LD <- file.path(dir_output, "LD", "FinnGen", paste0(gene_of_interest, "_window_", WINDOW_SIZE, "_LD.RDS"))
+  filename_LD <- file.path(dir_output, "LD", "FinnGen", paste0(gene_of_interest, "_LD.RDS"))
   ensure_dir(dirname(filename_LD))
   if (file.exists(filename_LD)) {
     LD <- readRDS(filename_LD)
@@ -532,7 +532,7 @@ load_ld_mat_FinnGen <- function(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_
 }
 
 harmonize <- function(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type, dir_output) {
-  names_risk_factor <- names(list_data$risk_factor)
+  names_risk_factor <- names(list_data)
   fname_harmonize <- file.path(dir_output, "harmonize", "harmonize.RDS")
 
   if (file.exists(fname_harmonize)) {
@@ -859,11 +859,11 @@ get_colocPropTest_res <- function(dir_results, list_factors) {
 }
 
 
-get_all_results <- function(runID, names_risk_factor, WINDOW_SIZE) {
-  lst <- list.files(file.path("results", runID, paste0("window_", WINDOW_SIZE)))
+get_all_results <- function(runID, names_risk_factor) {
+  lst <- list.files(file.path("results", runID))
   merged <- NULL
   for (gene_of_interest in lst) {
-    dir_results <- file.path("results", runID, paste0("window_", WINDOW_SIZE), gene_of_interest)
+    dir_results <- file.path("results", runID, gene_of_interest)
     res_propcoloc <- get_propcoloc_res(dir_results, names_risk_factor)
     res_susie <- get_susie_res(dir_results, names_risk_factor)
     res_coloc <- get_coloc_res(dir_results, names_risk_factor)
