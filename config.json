@@ -1,3 +1,8 @@
+// Log in to your Synapse account.
+// Click on your username in the top-right corner and go to "Your Account Settings."
+// Under "Personal Access Tokens", click "Create New Token."
+// Give the token a name and select the desired permissions (e.g., "view", "download").
+// Click "Create Token" and copy the token immediately—you won’t be able to see it again.
 {
   "synapse_token": "your_token_here"
 }
