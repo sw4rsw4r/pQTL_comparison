@@ -52,7 +52,7 @@ get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   return(res)
 }
 
-download_metadata <- function(){
+Synapse_download_data <- function() {
   # Modify your config.json file to include your Synapse authentication token
   # The config.json file should look like this:
   # {
@@ -65,12 +65,24 @@ download_metadata <- function(){
   # Login to Synapse using the token
   synLogin(authToken = auth_token)
 
-  path_SNP_RSID_maps = "data/UKBB/Metadata/SNP_RSID_maps"
-  path_Protein_annotation = "data/UKBB/Metadata/Protein_annotation"
+  path_SNP_RSID_maps <- "data/UKBB/Metadata/SNP_RSID_maps"
+  path_Protin_annotation <- "data/UKBB/Metadata/Protein_annotation"
+
   # Download the rsID mapping files from Synapse
   synapserutils::syncFromSynapse("syn51396727", path = path_SNP_RSID_maps)
   # Download the protein annotation file from Synapse
   synapserutils::syncFromSynapse("syn51396728", path = path_Protein_annotation)
+  # Download summary statistics
+  files_gen <- synGetChildren("syn51365303")
+  files_list <- as.list(files_gen)
+  UKBB_info <- data.frame(
+    id = sapply(files_list, function(x) x$id),
+    name = sapply(files_list, function(x) x$name),
+    type = sapply(files_list, function(x) x$type)
+  ) %>%
+    mutate(genename = sub("_.*", "", name)) %>%
+    filter(genename %in% genes_FinnGen, !duplicated(genename))
+  return(UKBB_info)
 }
 
 download_files_FinnGen <- function(gene_of_interest, risk_factor, dir_download) {
@@ -796,11 +808,13 @@ run_colocPropTest <- function(res, dir_results) {
   # if (file.exists(fname_output)) {
   #   return()
   # }
-  res_proptests <- run_proptests(res[[RF1]], res[[RF2]], LD = res[[RF1]]$LD)
-  write.table(res_proptests,
-    fname_output,
-    quote = F, row.names = F, col.names = T, sep = "\t"
-  )
+  if (length(res[[1]]$snp) > 2) {
+    res_proptests <- run_proptests(res[[RF1]], res[[RF2]], LD = res[[RF1]]$LD)
+    write.table(res_proptests,
+      fname_output,
+      quote = F, row.names = F, col.names = T, sep = "\t"
+    )
+  }
 }
 
 

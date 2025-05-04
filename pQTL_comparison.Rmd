@@ -78,18 +78,7 @@ for (gene_of_interest in genes_FinnGen) {
 
 ## Download and process UKBB summary data
 ```{r}
-download_metadata()
-
-# download summarystatistics
-files_gen <- synGetChildren("syn51365303")
-files_list <- as.list(files_gen)
-UKBB_info <- data.frame(
-  id = sapply(files_list, function(x) x$id),
-  name = sapply(files_list, function(x) x$name),
-  type = sapply(files_list, function(x) x$type)
-) %>%
-  mutate(genename = sub("_.*", "", name)) %>%
-  filter(genename %in% genes_FinnGen, !duplicated(genename))
+UKBB_info <- Synapse_download_data()
 
 for (idx in 1:nrow(UKBB_info)) {
   gene_of_interest <- UKBB_info[idx, "genename"]
