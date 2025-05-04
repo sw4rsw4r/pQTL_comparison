@@ -526,18 +526,6 @@ load_ld_mat_FinnGen <- function(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_
         return(data.frame())
       }
     )
-    # if (nrow(df_merged) == 0) {
-    #   df_UKBBrsIDmap$REF <- sapply(df_UKBBrsIDmap$REF, complement_allele)
-    #   df_UKBBrsIDmap$ALT <- sapply(df_UKBBrsIDmap$ALT, complement_allele)
-    #   df_UKBBrsIDmap <- df_UKBBrsIDmap %>% mutate(ID = paste0("chr", CHR, "_", POS, "_", REF, "_", ALT))
-    #   df_merged <- df_LD_filt %>%
-    #     inner_join(df_UKBBrsIDmap, by = c("ID1" = "ID")) %>%
-    #     dplyr::rename(snp = rsid) %>%
-    #     inner_join(df_UKBBrsIDmap[, c("ID", "rsid")], by = c("ID2" = "ID")) %>%
-    #     dplyr::rename(snp2 = rsid) %>%
-    #     dplyr::select(-ID1, -ID2) %>%
-    #     distinct()
-    # }
 
     ld_meta <- df_merged %>%
       dplyr::rename(effect = ALT, other = REF) %>%
