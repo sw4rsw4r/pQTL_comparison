@@ -24,6 +24,43 @@ ensure_dir <- function(dirpath) {
   }
 }
 
+
+Synapse_login <- function() {
+  # Modify your config.json file to include your Synapse authentication token
+  # The config.json file should look like this:
+  # {
+  #   "synapse_token": "your_token_here"
+  # }
+  # Load the configuration from config.json file
+  config <- fromJSON("config.json")
+  # Retrieve the Synapse authentication token from the configuration file
+  auth_token <- config$synapse_token
+  # Login to Synapse using the token
+  synLogin(authToken = auth_token)
+}
+
+Synapse_download_data <- function() {
+  path_SNP_RSID_maps <- "data/UKBB/Metadata/SNP_RSID_maps"
+  path_Protin_annotation <- "data/UKBB/Metadata/Protein_annotation"
+
+  # Download the rsID mapping files from Synapse
+  synapserutils::syncFromSynapse("syn51396727", path = path_SNP_RSID_maps)
+  # Download the protein annotation file from Synapse
+  synapserutils::syncFromSynapse("syn51396728", path = path_Protein_annotation)
+  # Download summary statistics
+  files_gen <- synGetChildren("syn51365303")
+  files_list <- as.list(files_gen)
+  UKBB_info <- data.frame(
+    id = sapply(files_list, function(x) x$id),
+    name = sapply(files_list, function(x) x$name),
+    type = sapply(files_list, function(x) x$type)
+  ) %>%
+    mutate(genename = sub("_.*", "", name)) %>%
+    filter(genename %in% genes_FinnGen, !duplicated(genename))
+  return(UKBB_info)
+}
+
+
 get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   # This file was downloaded from the following URL: https://www.synapse.org/Synapse:syn51396728
   df_anno <- vroom("data/UKBB/Metadata/Protein_annotation/olink_protein_map_3k_v1.tsv", show_col_types = FALSE)
@@ -52,44 +89,11 @@ get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   return(res)
 }
 
-Synapse_download_data <- function() {
-  # Modify your config.json file to include your Synapse authentication token
-  # The config.json file should look like this:
-  # {
-  #   "synapse_token": "your_token_here"
-  # }
-  # Load the configuration from config.json file
-  config <- fromJSON("config.json")
-  # Retrieve the Synapse authentication token from the configuration file
-  auth_token <- config$synapse_token
-  # Login to Synapse using the token
-  synLogin(authToken = auth_token)
-
-  path_SNP_RSID_maps <- "data/UKBB/Metadata/SNP_RSID_maps"
-  path_Protin_annotation <- "data/UKBB/Metadata/Protein_annotation"
-
-  # Download the rsID mapping files from Synapse
-  synapserutils::syncFromSynapse("syn51396727", path = path_SNP_RSID_maps)
-  # Download the protein annotation file from Synapse
-  synapserutils::syncFromSynapse("syn51396728", path = path_Protein_annotation)
-  # Download summary statistics
-  files_gen <- synGetChildren("syn51365303")
-  files_list <- as.list(files_gen)
-  UKBB_info <- data.frame(
-    id = sapply(files_list, function(x) x$id),
-    name = sapply(files_list, function(x) x$name),
-    type = sapply(files_list, function(x) x$type)
-  ) %>%
-    mutate(genename = sub("_.*", "", name)) %>%
-    filter(genename %in% genes_FinnGen, !duplicated(genename))
-  return(UKBB_info)
-}
-
-download_files_FinnGen <- function(gene_of_interest, risk_factor, dir_download) {
-  if (risk_factor == "Olink") {
+download_files_FinnGen <- function(gene_of_interest, platform, dir_download) {
+  if (platform == "Olink") {
     addr <- "https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Olink/pQTL/"
     filename <- paste0("Olink_Batch1_", gene_of_interest, ".txt.gz")
-  } else if (risk_factor == "Somascan") {
+  } else if (platform == "Somascan") {
     addr <- "https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Somascan/pQTL/"
 
     probe_somascan <- "data/FinnGen/pQTL/Somascan/probe_map.tsv"
@@ -97,20 +101,14 @@ download_files_FinnGen <- function(gene_of_interest, risk_factor, dir_download) 
     seqid <- subset(df_probe_somascan, geneName == gene_of_interest)$AptName[1]
     filename <- paste0("SomaScan_Batch2_", seqid, ".txt.gz")
   }
-  file_downloaded <- paste0(risk_factor, "_", gene_of_interest, ".txt.gz")
+  file_downloaded <- paste0(platform, "_", gene_of_interest, ".txt.gz")
   cmd1 <- paste0("wget ", addr, filename, " -O ", dir_download, file_downloaded)
   cmd2 <- paste0("wget ", addr, filename, ".tbi -O ", dir_download, file_downloaded, ".tbi")
   system(cmd1)
   system(cmd2)
 }
 
-
-# complement_allele <- function(allele) {
-#   comp_map <- c("A" = "T", "T" = "A", "C" = "G", "G" = "C")
-#   return(comp_map[allele])
-# }
-
-read_tabix <- function(filepath, region) {
+read_tabix_FinnGen <- function(filepath, region) {
   tabix_file <- TabixFile(filepath)
   this_chrom <- sub("X", 23, region$CHR)
   tabix_out <- tryCatch(
@@ -148,30 +146,23 @@ read_tabix <- function(filepath, region) {
 
   df_merged <- df_pQTL %>%
     inner_join(df_UKBBrsIDmap, by = c("CHR", "POS", "REF", "ALT"))
-
-  # if (nrow(df_UKBBrsIDmap) != 0 && nrow(df_merged) == 0) {
-  #   df_UKBBrsIDmap$REF <- sapply(df_UKBBrsIDmap$REF, complement_allele)
-  #   df_UKBBrsIDmap$ALT <- sapply(df_UKBBrsIDmap$ALT, complement_allele)
-  #   df_merged <- df_pQTL %>%
-  #     inner_join(df_UKBBrsIDmap, by = c("CHR", "POS", "REF", "ALT"))
-  # }
   return(df_merged)
 }
 
-delete_files <- function(filepath) {
+delete_files_FinnGen <- function(filepath) {
   file.remove(filepath)
   file.remove(paste0(filepath, ".tbi"))
 }
 
-load_pQTL_Finngen <- function(gene_of_interest, risk_factor, WINDOW_SIZE) {
+load_pQTL_Finngen <- function(gene_of_interest, platform, WINDOW_SIZE) {
   dir_download <- "data/FinnGen/pQTL/downloaded/"
   ensure_dir(dir_download)
-  filepath <- paste0(dir_download, "/", risk_factor, "_", gene_of_interest, ".txt.gz")
-  if (!file.exists(filepath)) download_files_FinnGen(gene_of_interest, risk_factor, dir_download)
+  filepath <- paste0(dir_download, "/", platform, "_", gene_of_interest, ".txt.gz")
+  if (!file.exists(filepath)) download_files_FinnGen(gene_of_interest, platform, dir_download)
 
   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
-  df_pQTL <- read_tabix(filepath, region)
-  delete_files(filepath)
+  df_pQTL <- read_tabix_FinnGen(filepath, region)
+  delete_files_FinnGen(filepath)
 
   if (any(as.numeric(df_pQTL$P) == 0)) stop("zero p-value")
 
@@ -222,7 +213,7 @@ load_pQTL_UKBB <- function(target_id, filename_tar, gene_of_interest, WINDOW_SIZ
 
   df_UKBBrsIDmap <- vroom(paste0("data/UKBB/Metadata/SNP_RSID_maps/olink_rsid_map_mac5_info03_b0_7_chr", region$CHR, "_patched_v2.tsv.gz"))
 
-  # This rsID is going to be used to match IDs in the LD matrix (https://registry.opendata.aws/ukbb-ld/)
+  # These rsIDs are going to be used to match IDs in the LD matrix (https://registry.opendata.aws/ukbb-ld/)
   df_merged <- df_pQTL %>%
     inner_join(df_UKBBrsIDmap, by = "ID")
 
@@ -402,7 +393,7 @@ get_ld_path_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   hg19_start <- with(region, get_liftOver_hg38Tohg19(CHR, locus_lower))
   hg19_end <- with(region, get_liftOver_hg38Tohg19(CHR, locus_upper))
 
-  LD_files <- read.table("UKBB_ld_file_list.txt")$V4
+  LD_files <- read.table("data/UKBB/ld_matrix/UKBB_ld_file_list.txt")$V4
   LD_files <- grep(".npz$", LD_files, value = T)
   LD_words <- strsplit(LD_files, "_")
 

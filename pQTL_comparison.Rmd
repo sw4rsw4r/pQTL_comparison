@@ -67,8 +67,8 @@ for (gene_of_interest in genes_FinnGen) {
     # message("Processing ", gene_of_interest)
     data_FinnGen <- list()
 
-    for (risk_factor in c("Somascan", "Olink")) {
-      data_FinnGen[[risk_factor]] <- load_pQTL_Finngen(gene_of_interest, risk_factor, WINDOW_SIZE)
+    for (platform in c("Somascan", "Olink")) {
+      data_FinnGen[[platform]] <- load_pQTL_Finngen(gene_of_interest, platform, WINDOW_SIZE)
     }
     ensure_dir(dirname(filepath_gwas_processed))
     saveRDS(data_FinnGen, file = filepath_gwas_processed)
@@ -78,6 +78,7 @@ for (gene_of_interest in genes_FinnGen) {
 
 ## Download and process UKBB summary data
 ```{r}
+Synapse_login()
 UKBB_info <- Synapse_download_data()
 
 for (idx in 1:nrow(UKBB_info)) {
@@ -155,6 +156,7 @@ for (gene_of_interest in filtered_genes) {
     genes_final <- c(genes_final, gene_of_interest)
   }
 }
+print(length(genes_final))
 ```
 
 ## Run_colocalization_analysis
