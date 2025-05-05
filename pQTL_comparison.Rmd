@@ -203,5 +203,11 @@ combined <- bind_rows(
   get_all_results("CASE4_FinnGenLD", c("FinnGen", "EGA")),
   get_all_results("CASE4_UKBBLD", c("FinnGen", "EGA"))
 )
-write.table(combined, "results/combined.txt", quote = F, row.names = F, col.names = F, sep = "\t")
+
+methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
+cat_abbr <- c("C", "NC", "IS")
+colnames(combined) <- c("runID", paste0(rep(methods, rep(3, length(methods))), '-', cat_abbr))
+rownames(combined) <- NULL
+print(combined)
+write.table(combined, "results/combined.txt", quote = F, row.names = F, col.names = T, sep = "\t")
 ```

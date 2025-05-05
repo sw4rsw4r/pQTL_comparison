@@ -407,8 +407,8 @@ for (gene_of_interest in genes_FinnGen) {
     # message(&quot;Processing &quot;, gene_of_interest)
     data_FinnGen &lt;- list()
 
-    for (risk_factor in c(&quot;Somascan&quot;, &quot;Olink&quot;)) {
-      data_FinnGen[[risk_factor]] &lt;- load_pQTL_Finngen(gene_of_interest, risk_factor, WINDOW_SIZE)
+    for (platform in c(&quot;Somascan&quot;, &quot;Olink&quot;)) {
+      data_FinnGen[[platform]] &lt;- load_pQTL_Finngen(gene_of_interest, platform, WINDOW_SIZE)
     }
     ensure_dir(dirname(filepath_gwas_processed))
     saveRDS(data_FinnGen, file = filepath_gwas_processed)
@@ -417,18 +417,9 @@ for (gene_of_interest in genes_FinnGen) {
 </div>
 <div id="download-and-process-ukbb-summary-data" class="section level2">
 <h2>Download and process UKBB summary data</h2>
-<pre class="r"><code>download_metadata()</code></pre>
+<pre class="r"><code>Synapse_login()</code></pre>
 <pre><code>## NULL</code></pre>
-<pre class="r"><code># download summarystatistics
-files_gen &lt;- synGetChildren(&quot;syn51365303&quot;)
-files_list &lt;- as.list(files_gen)
-UKBB_info &lt;- data.frame(
-  id = sapply(files_list, function(x) x$id),
-  name = sapply(files_list, function(x) x$name),
-  type = sapply(files_list, function(x) x$type)
-) %&gt;%
-  mutate(genename = sub(&quot;_.*&quot;, &quot;&quot;, name)) %&gt;%
-  filter(genename %in% genes_FinnGen, !duplicated(genename))
+<pre class="r"><code>UKBB_info &lt;- Synapse_download_data()
 
 for (idx in 1:nrow(UKBB_info)) {
   gene_of_interest &lt;- UKBB_info[idx, &quot;genename&quot;]
@@ -502,7 +493,9 @@ for (gene_of_interest in filtered_genes) {
     check_significant_hits(data_EGA, gene_of_interest, &quot;Somascan&quot;)) {
     genes_final &lt;- c(genes_final, gene_of_interest)
   }
-}</code></pre>
+}
+print(length(genes_final))</code></pre>
+<pre><code>## [1] 153</code></pre>
 </div>
 <div id="run_colocalization_analysis" class="section level2">
 <h2>Run_colocalization_analysis</h2>
@@ -547,7 +540,43 @@ for (gene_of_interest in filtered_genes) {
   get_all_results(&quot;CASE4_FinnGenLD&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;)),
   get_all_results(&quot;CASE4_UKBBLD&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;))
 )
-write.table(combined, &quot;results/combined.txt&quot;, quote = F, row.names = F, col.names = F, sep = &quot;\t&quot;)</code></pre>
+
+methods &lt;- c(&quot;coloc&quot;, &quot;susie&quot;, &quot;propcoloc&quot;, &quot;colocPropTest&quot;)
+cat_abbr &lt;- c(&quot;C&quot;, &quot;NC&quot;, &quot;IS&quot;)
+colnames(combined) &lt;- c(&quot;runID&quot;, paste0(rep(methods, rep(3, length(methods))), &#39;-&#39;, cat_abbr))
+rownames(combined) &lt;- NULL
+print(combined)</code></pre>
+<pre><code>##             runID     coloc-C    coloc-NC    coloc-IS    susie-C   susie-NC
+## 1           CASE1  0.95424837  0.04575163  0.00000000          1          0
+## 2          CASE2F   0.8039216   0.1960784   0.0000000 0.71241830 0.03267974
+## 3          CASE2U   0.6666667   0.3333333   0.0000000 0.83660131 0.09150327
+## 4           CASE3 0.830065359 0.163398693 0.006535948  0.5751634  0.1503268
+## 5 CASE3_FinnGenLD           0           0           1  0.6078431  0.2287582
+## 6    CASE3_UKBBLD           0           0           1 0.81045752 0.09150327
+## 7           CASE4 0.790849673 0.202614379 0.006535948  0.6535948  0.1895425
+## 8 CASE4_FinnGenLD           0           0           1  0.6732026  0.1895425
+## 9    CASE4_UKBBLD           0           0           1 0.89542484 0.07843137
+##     susie-IS propcoloc-C propcoloc-NC propcoloc-IS colocPropTest-C
+## 1          0    0.875817     0.124183     0.000000      0.96732026
+## 2 0.25490196  0.72549020   0.24836601   0.02614379       0.8627451
+## 3 0.07189542  0.42483660   0.47712418   0.09803922       0.4509804
+## 4  0.2745098           0            0            1               0
+## 5  0.1633987   0.4248366    0.4640523    0.1111111       0.4313725
+## 6 0.09803922   0.4248366    0.4640523    0.1111111       0.4313725
+## 7  0.1568627           0            0            1               0
+## 8  0.1372549   0.4444444    0.4444444    0.1111111     0.477124183
+## 9 0.02614379   0.4444444    0.4444444    0.1111111     0.477124183
+##   colocPropTest-NC colocPropTest-IS
+## 1       0.03267974       0.00000000
+## 2        0.1372549        0.0000000
+## 3        0.5490196        0.0000000
+## 4                0                1
+## 5        0.5686275        0.0000000
+## 6        0.5686275        0.0000000
+## 7                0                1
+## 8      0.516339869      0.006535948
+## 9      0.516339869      0.006535948</code></pre>
+<pre class="r"><code>write.table(combined, &quot;results/combined.txt&quot;, quote = F, row.names = F, col.names = T, sep = &quot;\t&quot;)</code></pre>
 </div>
 </div>
 
