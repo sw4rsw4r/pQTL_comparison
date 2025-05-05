@@ -24,24 +24,32 @@ ensure_dir <- function(dirpath) {
   }
 }
 
+Synapse_login <- function(config_path = "config.json") {
+  tryCatch({
+    if (!file.exists(config_path)) {
+      stop(sprintf("File '%s' does not exist.", config_path))
+    }
 
-Synapse_login <- function() {
-  # Modify your config.json file to include your Synapse authentication token
-  # The config.json file should look like this:
-  # {
-  #   "synapse_token": "your_token_here"
-  # }
-  # Load the configuration from config.json file
-  config <- fromJSON("config.json")
-  # Retrieve the Synapse authentication token from the configuration file
-  auth_token <- config$synapse_token
-  # Login to Synapse using the token
-  synLogin(authToken = auth_token)
+    config <- jsonlite::fromJSON(config_path)
+
+    if (is.null(config$synapse_token) || config$synapse_token == "") {
+      stop("The config file must include a non-empty 'synapse_token' field.")
+    }
+
+    synapser::synLogin(authToken = config$synapse_token)
+  }, error = function(e) {
+    stop(
+      "Failed to log in to Synapse. Please ensure your 'config.json' file is formatted like:\n\n",
+      '{
+  "synapse_token": "your_token_here"
+}'
+    )
+  })
 }
 
 Synapse_download_data <- function() {
   path_SNP_RSID_maps <- "data/UKBB/Metadata/SNP_RSID_maps"
-  path_Protin_annotation <- "data/UKBB/Metadata/Protein_annotation"
+  path_Protein_annotation <- "data/UKBB/Metadata/Protein_annotation"
 
   # Download the rsID mapping files from Synapse
   synapserutils::syncFromSynapse("syn51396727", path = path_SNP_RSID_maps)
