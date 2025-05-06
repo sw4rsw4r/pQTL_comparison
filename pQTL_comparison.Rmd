@@ -170,7 +170,7 @@ for (gene_of_interest in genes_final) {
 
   data_CASE1 <- readRDS(file.path(BASE_DATA_DIR, "CASE1", paste0(gene_of_interest, "_processed.RDS")))
   data_CASE2F <- data_FinnGen
-  data_CASE2U <- list(
+  data_CASE2B <- list(
     Olink = data_UKBB$Olink,
     Somascan = data_EGA$Somascan
   )
@@ -184,7 +184,7 @@ for (gene_of_interest in genes_final) {
   )
   run_colocalization_analysis("CASE1", gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = "UKBB")
   run_colocalization_analysis("CASE2F", gene_of_interest, WINDOW_SIZE, data_CASE2F, LD_type = "FinnGen")
-  run_colocalization_analysis("CASE2U", gene_of_interest, WINDOW_SIZE, data_CASE2U, LD_type = "UKBB")
+  run_colocalization_analysis("CASE2B", gene_of_interest, WINDOW_SIZE, data_CASE2B, LD_type = "UKBB")
   run_colocalization_analysis("CASE3", gene_of_interest, WINDOW_SIZE, data_CASE3, LD_type = c("FinnGen", "UKBB"))
   run_colocalization_analysis("CASE4", gene_of_interest, WINDOW_SIZE, data_CASE4, LD_type = c("FinnGen", "UKBB"))
 }
@@ -194,19 +194,19 @@ for (gene_of_interest in genes_final) {
 ```{r}
 combined <- bind_rows(
   get_all_results("CASE1", c("group1", "group2")),
+  get_all_results("CASE2B", c("Somascan", "Olink")),
   get_all_results("CASE2F", c("Somascan", "Olink")),
-  get_all_results("CASE2U", c("Somascan", "Olink")),
   get_all_results("CASE3", c("FinnGen", "UKBB")),
-  get_all_results("CASE3_FinnGenLD", c("FinnGen", "UKBB")),
-  get_all_results("CASE3_UKBBLD", c("FinnGen", "UKBB")),
+  get_all_results("CASE3F_LD", c("FinnGen", "UKBB")),
+  get_all_results("CASE3B_LD", c("FinnGen", "UKBB")),
   get_all_results("CASE4", c("FinnGen", "EGA")),
-  get_all_results("CASE4_FinnGenLD", c("FinnGen", "EGA")),
-  get_all_results("CASE4_UKBBLD", c("FinnGen", "EGA"))
+  get_all_results("CASE4F_LD", c("FinnGen", "EGA")),
+  get_all_results("CASE4B_LD", c("FinnGen", "EGA"))
 )
 
 methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
 cat_abbr <- c("C", "NC", "IS")
-colnames(combined) <- c("runID", paste0(rep(methods, rep(3, length(methods))), '-', cat_abbr))
+colnames(combined) <- c("runID", paste0(rep(methods, rep(3, length(methods))), "-", cat_abbr))
 rownames(combined) <- NULL
 print(combined)
 write.table(combined, "results/combined.txt", quote = F, row.names = F, col.names = T, sep = "\t")

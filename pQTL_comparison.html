@@ -508,7 +508,7 @@ print(length(genes_final))</code></pre>
 
   data_CASE1 &lt;- readRDS(file.path(BASE_DATA_DIR, &quot;CASE1&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;)))
   data_CASE2F &lt;- data_FinnGen
-  data_CASE2U &lt;- list(
+  data_CASE2B &lt;- list(
     Olink = data_UKBB$Olink,
     Somascan = data_EGA$Somascan
   )
@@ -522,7 +522,7 @@ print(length(genes_final))</code></pre>
   )
   run_colocalization_analysis(&quot;CASE1&quot;, gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = &quot;UKBB&quot;)
   run_colocalization_analysis(&quot;CASE2F&quot;, gene_of_interest, WINDOW_SIZE, data_CASE2F, LD_type = &quot;FinnGen&quot;)
-  run_colocalization_analysis(&quot;CASE2U&quot;, gene_of_interest, WINDOW_SIZE, data_CASE2U, LD_type = &quot;UKBB&quot;)
+  run_colocalization_analysis(&quot;CASE2B&quot;, gene_of_interest, WINDOW_SIZE, data_CASE2B, LD_type = &quot;UKBB&quot;)
   run_colocalization_analysis(&quot;CASE3&quot;, gene_of_interest, WINDOW_SIZE, data_CASE3, LD_type = c(&quot;FinnGen&quot;, &quot;UKBB&quot;))
   run_colocalization_analysis(&quot;CASE4&quot;, gene_of_interest, WINDOW_SIZE, data_CASE4, LD_type = c(&quot;FinnGen&quot;, &quot;UKBB&quot;))
 }</code></pre>
@@ -531,50 +531,50 @@ print(length(genes_final))</code></pre>
 <h2>Combine results</h2>
 <pre class="r"><code>combined &lt;- bind_rows(
   get_all_results(&quot;CASE1&quot;, c(&quot;group1&quot;, &quot;group2&quot;)),
+  get_all_results(&quot;CASE2B&quot;, c(&quot;Somascan&quot;, &quot;Olink&quot;)),
   get_all_results(&quot;CASE2F&quot;, c(&quot;Somascan&quot;, &quot;Olink&quot;)),
-  get_all_results(&quot;CASE2U&quot;, c(&quot;Somascan&quot;, &quot;Olink&quot;)),
   get_all_results(&quot;CASE3&quot;, c(&quot;FinnGen&quot;, &quot;UKBB&quot;)),
-  get_all_results(&quot;CASE3_FinnGenLD&quot;, c(&quot;FinnGen&quot;, &quot;UKBB&quot;)),
-  get_all_results(&quot;CASE3_UKBBLD&quot;, c(&quot;FinnGen&quot;, &quot;UKBB&quot;)),
+  get_all_results(&quot;CASE3F_LD&quot;, c(&quot;FinnGen&quot;, &quot;UKBB&quot;)),
+  get_all_results(&quot;CASE3B_LD&quot;, c(&quot;FinnGen&quot;, &quot;UKBB&quot;)),
   get_all_results(&quot;CASE4&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;)),
-  get_all_results(&quot;CASE4_FinnGenLD&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;)),
-  get_all_results(&quot;CASE4_UKBBLD&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;))
+  get_all_results(&quot;CASE4F_LD&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;)),
+  get_all_results(&quot;CASE4B_LD&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;))
 )
 
 methods &lt;- c(&quot;coloc&quot;, &quot;susie&quot;, &quot;propcoloc&quot;, &quot;colocPropTest&quot;)
 cat_abbr &lt;- c(&quot;C&quot;, &quot;NC&quot;, &quot;IS&quot;)
-colnames(combined) &lt;- c(&quot;runID&quot;, paste0(rep(methods, rep(3, length(methods))), &#39;-&#39;, cat_abbr))
+colnames(combined) &lt;- c(&quot;runID&quot;, paste0(rep(methods, rep(3, length(methods))), &quot;-&quot;, cat_abbr))
 rownames(combined) &lt;- NULL
 print(combined)</code></pre>
-<pre><code>##             runID     coloc-C    coloc-NC    coloc-IS    susie-C   susie-NC
-## 1           CASE1  0.95424837  0.04575163  0.00000000          1          0
-## 2          CASE2F   0.8039216   0.1960784   0.0000000 0.71241830 0.03267974
-## 3          CASE2U   0.6666667   0.3333333   0.0000000 0.83660131 0.09150327
-## 4           CASE3 0.830065359 0.163398693 0.006535948  0.5751634  0.1503268
-## 5 CASE3_FinnGenLD           0           0           1  0.6078431  0.2287582
-## 6    CASE3_UKBBLD           0           0           1 0.81045752 0.09150327
-## 7           CASE4 0.790849673 0.202614379 0.006535948  0.6535948  0.1895425
-## 8 CASE4_FinnGenLD           0           0           1  0.6732026  0.1895425
-## 9    CASE4_UKBBLD           0           0           1 0.89542484 0.07843137
+<pre><code>##       runID     coloc-C    coloc-NC    coloc-IS    susie-C   susie-NC
+## 1     CASE1  0.95424837  0.04575163  0.00000000          1          0
+## 2    CASE2B   0.6666667   0.3333333   0.0000000 0.83660131 0.09150327
+## 3    CASE2F   0.8039216   0.1960784   0.0000000 0.71241830 0.03267974
+## 4     CASE3 0.830065359 0.163398693 0.006535948  0.5751634  0.1503268
+## 5 CASE3F_LD           0           0           1  0.7189542  0.0130719
+## 6 CASE3B_LD           0           0           1 0.81045752 0.09150327
+## 7     CASE4 0.790849673 0.202614379 0.006535948  0.6535948  0.1895425
+## 8 CASE4F_LD           0           0           1  0.8104575  0.0130719
+## 9 CASE4B_LD           0           0           1 0.89542484 0.07843137
 ##     susie-IS propcoloc-C propcoloc-NC propcoloc-IS colocPropTest-C
 ## 1          0    0.875817     0.124183     0.000000      0.96732026
-## 2 0.25490196  0.72549020   0.24836601   0.02614379       0.8627451
-## 3 0.07189542  0.42483660   0.47712418   0.09803922       0.4509804
+## 2 0.07189542  0.42483660   0.47712418   0.09803922       0.4509804
+## 3 0.25490196  0.72549020   0.24836601   0.02614379       0.8627451
 ## 4  0.2745098           0            0            1               0
-## 5  0.1633987   0.4248366    0.4640523    0.1111111       0.4313725
+## 5  0.2679739   0.5163399    0.4705882    0.0130719       0.6470588
 ## 6 0.09803922   0.4248366    0.4640523    0.1111111       0.4313725
 ## 7  0.1568627           0            0            1               0
-## 8  0.1372549   0.4444444    0.4444444    0.1111111     0.477124183
+## 8  0.1764706  0.60130719   0.35294118   0.04575163     0.614379085
 ## 9 0.02614379   0.4444444    0.4444444    0.1111111     0.477124183
 ##   colocPropTest-NC colocPropTest-IS
 ## 1       0.03267974       0.00000000
-## 2        0.1372549        0.0000000
-## 3        0.5490196        0.0000000
+## 2        0.5490196        0.0000000
+## 3        0.1372549        0.0000000
 ## 4                0                1
-## 5        0.5686275        0.0000000
+## 5        0.3529412        0.0000000
 ## 6        0.5686275        0.0000000
 ## 7                0                1
-## 8      0.516339869      0.006535948
+## 8      0.379084967      0.006535948
 ## 9      0.516339869      0.006535948</code></pre>
 <pre class="r"><code>write.table(combined, &quot;results/combined.txt&quot;, quote = F, row.names = F, col.names = T, sep = &quot;\t&quot;)</code></pre>
 </div>

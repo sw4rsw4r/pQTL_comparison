@@ -956,16 +956,16 @@ run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, li
     run_coloc(res, dir_output)
     run_susie(res, dir_output)
 
-    runID0 <- paste0(runID, "_UKBBLD")
+    runID0 <- paste0(runID, "B_LD")
     dir_output0 <- file.path("results", runID0, gene_of_interest)
     res[[1]]$LD <- res[[2]]$LD <- LD_UKBB
     run_propcoloc(res, dir_output0)
     run_colocPropTest(res, dir_output0)
     run_susie(res, dir_output0)
 
-    runID1 <- paste0(runID, "_FinnGenLD")
+    runID1 <- paste0(runID, "F_LD")
     dir_output1 <- file.path("results", runID1, gene_of_interest)
-    res[[1]]$LD <- res[[1]]$LD <- LD_FinnGen
+    res[[1]]$LD <- res[[2]]$LD <- LD_FinnGen
     run_propcoloc(res, dir_output1)
     run_colocPropTest(res, dir_output1)
     run_susie(res, dir_output1)
