@@ -530,15 +530,15 @@ print(length(genes_final))</code></pre>
 <div id="combine-results" class="section level2">
 <h2>Combine results</h2>
 <pre class="r"><code>combined &lt;- bind_rows(
-  get_all_results(&quot;CASE1&quot;, c(&quot;group1&quot;, &quot;group2&quot;)),
-  get_all_results(&quot;CASE2B&quot;, c(&quot;Somascan&quot;, &quot;Olink&quot;)),
-  get_all_results(&quot;CASE2F&quot;, c(&quot;Somascan&quot;, &quot;Olink&quot;)),
-  get_all_results(&quot;CASE3&quot;, c(&quot;FinnGen&quot;, &quot;UKBB&quot;)),
-  get_all_results(&quot;CASE3F_LD&quot;, c(&quot;FinnGen&quot;, &quot;UKBB&quot;)),
-  get_all_results(&quot;CASE3B_LD&quot;, c(&quot;FinnGen&quot;, &quot;UKBB&quot;)),
-  get_all_results(&quot;CASE4&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;)),
-  get_all_results(&quot;CASE4F_LD&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;)),
-  get_all_results(&quot;CASE4B_LD&quot;, c(&quot;FinnGen&quot;, &quot;EGA&quot;))
+  get_all_results(&quot;CASE1&quot;),
+  get_all_results(&quot;CASE2B&quot;),
+  get_all_results(&quot;CASE2F&quot;),
+  get_all_results(&quot;CASE3&quot;),
+  get_all_results(&quot;CASE3F_LD&quot;),
+  get_all_results(&quot;CASE3B_LD&quot;),
+  get_all_results(&quot;CASE4&quot;),
+  get_all_results(&quot;CASE4F_LD&quot;),
+  get_all_results(&quot;CASE4B_LD&quot;)
 )
 
 methods &lt;- c(&quot;coloc&quot;, &quot;susie&quot;, &quot;propcoloc&quot;, &quot;colocPropTest&quot;)
@@ -558,14 +558,14 @@ print(combined)</code></pre>
 ## 9 CASE4B_LD           0           0           1 0.89542484 0.07843137
 ##     susie-IS propcoloc-C propcoloc-NC propcoloc-IS colocPropTest-C
 ## 1          0    0.875817     0.124183     0.000000      0.96732026
-## 2 0.07189542  0.42483660   0.47712418   0.09803922       0.4509804
-## 3 0.25490196  0.72549020   0.24836601   0.02614379       0.8627451
+## 2 0.07189542  0.50326797   0.39869281   0.09803922       0.4509804
+## 3 0.25490196  0.75816993   0.21568627   0.02614379       0.8627451
 ## 4  0.2745098           0            0            1               0
-## 5  0.2679739   0.5163399    0.4705882    0.0130719       0.6470588
-## 6 0.09803922   0.4248366    0.4640523    0.1111111       0.4313725
+## 5  0.2679739   0.5555556    0.4313725    0.0130719       0.6470588
+## 6 0.09803922   0.5555556    0.3333333    0.1111111       0.4313725
 ## 7  0.1568627           0            0            1               0
-## 8  0.1764706  0.60130719   0.35294118   0.04575163     0.614379085
-## 9 0.02614379   0.4444444    0.4444444    0.1111111     0.477124183
+## 8  0.1764706  0.65359477   0.30065359   0.04575163     0.614379085
+## 9 0.02614379   0.5032680    0.3856209    0.1111111     0.477124183
 ##   colocPropTest-NC colocPropTest-IS
 ## 1       0.03267974       0.00000000
 ## 2        0.5490196        0.0000000

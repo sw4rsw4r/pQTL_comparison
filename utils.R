@@ -806,12 +806,11 @@ run_colocPropTest <- function(res, dir_results) {
 
 
 
-get_propcoloc_res <- function(dir_results, list_factors) {
-  RF1 <- list_factors[1]
-  RF2 <- list_factors[2]
+get_propcoloc_res <- function(dir_results) {
 
   fname_propcoloc <- file.path(dir_results, "propcoloc", "prop.coloc.RDS")
   res_propcoloc <- "insufficient"
+  p_cond <- LM_cond <- NA
   if (file.exists(fname_propcoloc)) {
     df_temp <- readRDS(fname_propcoloc)
     p_het <- ifelse(is.logical(df_temp$p_cond) & df_temp$p_cond == F, 1, df_temp$p_cond)
@@ -821,21 +820,20 @@ get_propcoloc_res <- function(dir_results, list_factors) {
     )
   }
 
-  return(res_propcoloc)
+  return(list(coloc = res_propcoloc, p_cond = p_het, LM_cond = p_slope))
 }
 
 
 
-get_susie_res <- function(dir_results, list_factors) {
-  RF1 <- list_factors[1]
-  RF2 <- list_factors[2]
+get_susie_res <- function(dir_results) {
 
   fname_susie <- file.path(dir_results, "susie", "susie.txt")
   res_susie <- "insufficient"
+  max_H3 <- max_H4 <- NA
   if (file.exists(fname_susie)) {
     res_temp <- with(
       read.delim(fname_susie),
-      data.frame(RF1, RF2,
+      data.frame(
         H0 = PP.H0.abf,
         H1 = PP.H1.abf,
         H2 = PP.H2.abf,
@@ -847,48 +845,51 @@ get_susie_res <- function(dir_results, list_factors) {
     res_susie <- ifelse(any(res_temp$H4 >= 0.5), "coloc",
       ifelse(all(res_temp$H4 < 0.5) && any(res_temp$H3 >= 0.5), "non_coloc", "insufficient")
     )
+    max_H3 = res_temp$H3[which.max(res_temp$H4)]
+    max_H4 = max(res_temp$H4)
   }
-  return(res_susie)
+  return(list(coloc = res_susie, max_H3 = max_H3, max_H4 = max_H4))
 }
 
-get_coloc_res <- function(dir_results, list_factors) {
-  RF1 <- list_factors[1]
-  RF2 <- list_factors[2]
+get_coloc_res <- function(dir_results) {
   fname_coloc <- file.path(dir_results, "coloc", "coloc.txt")
   res_coloc <- "insufficient"
+  H3 <- H4 <- NA
   if (file.exists(fname_coloc)) {
+    res_temp <- as.data.frame(t(read.delim(fname_coloc)))
     res_coloc <- with(
-      as.data.frame(t(read.delim(fname_coloc))),
+      res_temp,
       ifelse(PP.H4.abf >= 0.5, "coloc", ifelse(PP.H3.abf >= 0.5, "non_coloc", "insufficient"))
     )
+    H3 <- res_temp$PP.H3.abf
+    H4 <- res_temp$PP.H4.abf
   }
-  return(res_coloc)
+  return(list(coloc = res_coloc, H3 = H3, H4 = H4))
 }
 
-get_colocPropTest_res <- function(dir_results, list_factors) {
+get_colocPropTest_res <- function(dir_results) {
   res_colocPropTest <- "insufficient"
-  RF1 <- list_factors[1]
-  RF2 <- list_factors[2]
-
+  min_fdr <- NA
   fname_colocPropTest <- file.path(dir_results, "colocPropTest", "colocPropTest.txt")
   if (file.exists(fname_colocPropTest) && file.info(fname_colocPropTest)$size > 1) {
     df1 <- read.delim(fname_colocPropTest)
-    res_temp <- data.frame(RF1 = RF1, RF2 = RF2, min_p = min(df1$p), min_fdr = min(df1$fdr))
+    res_temp <- data.frame(min_p = min(df1$p), min_fdr = min(df1$fdr))
     res_colocPropTest <- ifelse(res_temp$min_fdr > 0.05, "coloc", "non_coloc")
+    min_fdr <- res_temp$min_fdr
   }
-  return(res_colocPropTest)
+  return(list(coloc = res_colocPropTest, min_fdr = min_fdr))
 }
 
 
-get_all_results <- function(runID, names_risk_factor) {
+get_all_results <- function(runID) {
   lst <- list.files(file.path("results", runID))
   merged <- NULL
   for (gene_of_interest in lst) {
     dir_results <- file.path("results", runID, gene_of_interest)
-    res_propcoloc <- get_propcoloc_res(dir_results, names_risk_factor)
-    res_susie <- get_susie_res(dir_results, names_risk_factor)
-    res_coloc <- get_coloc_res(dir_results, names_risk_factor)
-    res_colocPropTest <- get_colocPropTest_res(dir_results, names_risk_factor)
+    res_propcoloc <- get_propcoloc_res(dir_results)$coloc
+    res_susie <- get_susie_res(dir_results)$coloc
+    res_coloc <- get_coloc_res(dir_results)$coloc
+    res_colocPropTest <- get_colocPropTest_res(dir_results)$coloc
 
     merged <- rbind(merged, data.frame(
       gene = gene_of_interest,

@@ -193,15 +193,15 @@ for (gene_of_interest in genes_final) {
 ## Combine results
 ```{r}
 combined <- bind_rows(
-  get_all_results("CASE1", c("group1", "group2")),
-  get_all_results("CASE2B", c("Somascan", "Olink")),
-  get_all_results("CASE2F", c("Somascan", "Olink")),
-  get_all_results("CASE3", c("FinnGen", "UKBB")),
-  get_all_results("CASE3F_LD", c("FinnGen", "UKBB")),
-  get_all_results("CASE3B_LD", c("FinnGen", "UKBB")),
-  get_all_results("CASE4", c("FinnGen", "EGA")),
-  get_all_results("CASE4F_LD", c("FinnGen", "EGA")),
-  get_all_results("CASE4B_LD", c("FinnGen", "EGA"))
+  get_all_results("CASE1"),
+  get_all_results("CASE2B"),
+  get_all_results("CASE2F"),
+  get_all_results("CASE3"),
+  get_all_results("CASE3F_LD"),
+  get_all_results("CASE3B_LD"),
+  get_all_results("CASE4"),
+  get_all_results("CASE4F_LD"),
+  get_all_results("CASE4B_LD")
 )
 
 methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
