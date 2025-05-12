@@ -814,8 +814,8 @@ get_propcoloc_res <- function(dir_results, list_factors) {
   res_propcoloc <- "insufficient"
   if (file.exists(fname_propcoloc)) {
     df_temp <- readRDS(fname_propcoloc)
-    p_het <- ifelse(is.factor(df_temp$p_cond) & df_temp$p_cond == F, 1, df_temp$p_cond)
-    p_slope <- ifelse(is.factor(df_temp$LM_cond) & df_temp$LM_cond == F, 1, df_temp$LM_cond)
+    p_het <- ifelse(is.logical(df_temp$p_cond) & df_temp$p_cond == F, 1, df_temp$p_cond)
+    p_slope <- ifelse(is.logical(df_temp$LM_cond) & df_temp$LM_cond == F, 1, df_temp$LM_cond)
     res_propcoloc <- ifelse(is.na(p_slope) | p_slope > 0.05, "insufficient",
       ifelse(p_het > 0.05, "coloc", "non_coloc")
     )
