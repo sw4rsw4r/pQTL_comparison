@@ -19,7 +19,7 @@ conda activate pQTL_comparison
 If `synapser` fails to install, fix the Python path with:
 
 ```bash
-export RETICULATE_PYTHON=/home/seongwonhwang/miniconda3/envs/pQTL_comparison2/bin/python
+export RETICULATE_PYTHON=~/miniconda3/envs/pQTL_comparison/bin/python
 ```
 
 ```{r}
