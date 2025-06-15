@@ -24,9 +24,6 @@ export RETICULATE_PYTHON=~/miniconda3/envs/pQTL_comparison/bin/python
 
 ```{r}
 # Load project-specific functions
-source("PCA-LIML-function.R")
-source("summary_mvMR_BF.R")
-source("summary_mvMR_SSS.R")
 source("utils.R")
 
 # devtools::install_github("ash-res/prop-coloc")
