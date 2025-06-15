@@ -25,26 +25,29 @@ ensure_dir <- function(dirpath) {
 }
 
 Synapse_login <- function(config_path = "config.json") {
-  tryCatch({
-    if (!file.exists(config_path)) {
-      stop(sprintf("File '%s' does not exist.", config_path))
-    }
+  tryCatch(
+    {
+      if (!file.exists(config_path)) {
+        stop(sprintf("File '%s' does not exist.", config_path))
+      }
 
-    config <- jsonlite::fromJSON(config_path)
+      config <- jsonlite::fromJSON(config_path)
 
-    if (is.null(config$synapse_token) || config$synapse_token == "") {
-      stop("The config file must include a non-empty 'synapse_token' field.")
-    }
+      if (is.null(config$synapse_token) || config$synapse_token == "") {
+        stop("The config file must include a non-empty 'synapse_token' field.")
+      }
 
-    synapser::synLogin(authToken = config$synapse_token)
-  }, error = function(e) {
-    stop(
-      "Failed to log in to Synapse. Please ensure your 'config.json' file is formatted like:\n\n",
-      '{
+      synapser::synLogin(authToken = config$synapse_token)
+    },
+    error = function(e) {
+      stop(
+        "Failed to log in to Synapse. Please ensure your 'config.json' file is formatted like:\n\n",
+        '{
   "synapse_token": "your_token_here"
 }'
-    )
-  })
+      )
+    }
+  )
 }
 
 Synapse_download_data <- function() {
@@ -365,7 +368,8 @@ load_pQTL_EGA <- function(gene_of_interest, filepath, WINDOW_SIZE) {
   return(res_final)
 }
 
-check_significant_hits <- function(dataset, gene, platform) {
+
+check_significant_hits <- function(dataset, gene, platform, pval_cutoff = 1e-08) {
   nrow(subset(dataset[[platform]], pval < pval_cutoff)) > 0
 }
 
@@ -807,7 +811,6 @@ run_colocPropTest <- function(res, dir_results) {
 
 
 get_propcoloc_res <- function(dir_results) {
-
   fname_propcoloc <- file.path(dir_results, "propcoloc", "prop.coloc.RDS")
   res_propcoloc <- "insufficient"
   p_cond <- LM_cond <- NA
@@ -826,7 +829,6 @@ get_propcoloc_res <- function(dir_results) {
 
 
 get_susie_res <- function(dir_results) {
-
   fname_susie <- file.path(dir_results, "susie", "susie.txt")
   res_susie <- "insufficient"
   max_H3 <- max_H4 <- NA
@@ -845,8 +847,8 @@ get_susie_res <- function(dir_results) {
     res_susie <- ifelse(any(res_temp$H4 >= 0.5), "coloc",
       ifelse(all(res_temp$H4 < 0.5) && any(res_temp$H3 >= 0.5), "non_coloc", "insufficient")
     )
-    max_H3 = res_temp$H3[which.max(res_temp$H4)]
-    max_H4 = max(res_temp$H4)
+    max_H3 <- res_temp$H3[which.max(res_temp$H4)]
+    max_H4 <- max(res_temp$H4)
   }
   return(list(coloc = res_susie, max_H3 = max_H3, max_H4 = max_H4))
 }
@@ -941,22 +943,28 @@ get_all_results <- function(runID) {
   return(summary_combined)
 }
 
+
+
 run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type) {
   dir_output <- file.path("results", runID, gene_of_interest)
   res <- harmonize(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type, dir_output)
 
   if (length(LD_type) == 1) {
-    run_coloc(res, dir_output)
-    run_susie(res, dir_output)
-    run_propcoloc(res, dir_output)
-    run_colocPropTest(res, dir_output)
+    run_coloc(res, dir_output) # coloc does not use LD
+    run_susie(res, dir_output) # SuSiE uses LD, per dataset
+    run_propcoloc(res, dir_output) # propcoloc uses one shared LD
+    run_colocPropTest(res, dir_output) # colocPropTest uses one shared LD
   } else if (length(LD_type) == 2) {
+    # propcoloc and colocPropTest only support a single LD matrix, so run twice:
+    # once with UKBB LD and once with FinnGen LD
     LD_UKBB <- res[names(res) %in% c("EGA", "UKBB")][[1]]$LD
     LD_FinnGen <- res[["FinnGen"]]$LD
 
     run_coloc(res, dir_output)
     run_susie(res, dir_output)
 
+    # Run propcoloc and colocPropTest using UKBB LD for both datasets
+    # Also re-run susie to assess impact of single-LD usage
     runID0 <- paste0(runID, "B_LD")
     dir_output0 <- file.path("results", runID0, gene_of_interest)
     res[[1]]$LD <- res[[2]]$LD <- LD_UKBB
@@ -964,6 +972,8 @@ run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, li
     run_colocPropTest(res, dir_output0)
     run_susie(res, dir_output0)
 
+    # Run propcoloc and colocPropTest using FinnGen LD for both datasets
+    # Also re-run susie for consistency
     runID1 <- paste0(runID, "F_LD")
     dir_output1 <- file.path("results", runID1, gene_of_interest)
     res[[1]]$LD <- res[[2]]$LD <- LD_FinnGen

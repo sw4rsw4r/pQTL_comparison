@@ -100,11 +100,14 @@ for (idx in 1:nrow(UKBB_info)) {
 
 ## Download and process EGA summary data
 ```{r}
-EGA_info <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
 # This file was obtained from the following URL: https://www.ebi.ac.uk/gwas/publications/29875488.
+EGA_info <- read.delim("data/EGA/PMID29875488_studies_export.tsv")
+
+# Example reportedTrait: "Protein levels (XYZ.P12345)" → genename = "XYZ"
 EGA_info <- EGA_info %>%
   mutate(genename = sub(".*\\(([^.]+)\\..*\\)", "\\1", reportedTrait))
 
+# Subset to genes present in both FinnGen and UKBB datasets
 EGA_subset <- EGA_info %>%
   filter(genename %in% intersect(genes_FinnGen, UKBB_info$genename)) %>%
   filter(!duplicated(genename))
@@ -114,6 +117,7 @@ for (idx in 1:nrow(EGA_subset)) {
   filepath_gwas_processed <- file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS"))
   if (!file.exists(filepath_gwas_processed)) {
     # message("Processing ", gene_of_interest)
+    # Extract accession ID and summary statistics download URL
     accessionId <- EGA_subset[idx, "accessionId"]
     addr <- EGA_subset[idx, "summaryStatistics"]
     filepath <- paste0(addr, "/harmonised/", accessionId, ".h.tsv.gz")
@@ -127,28 +131,39 @@ for (idx in 1:nrow(EGA_subset)) {
 ```
 
 ## Gene filtering step
+- Step 1: Identify genes that are common across all three datasets.
+- Step 2: Exclude MHC and X chromosome genes from the common gene list.
+- Step 3: Further filter to include only genes with at least one significant SNP (p < 1e-8)
+
 ```{r}
+# Step 1: Identify genes that are common across all three datasets.
+# Only genes present in all datasets are considered for downstream analysis.
 genes_common <- Reduce(intersect, list(UKBB_info$genename, EGA_info$genename, genes_FinnGen))
 
-# https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
+# Define coordinates of the MHC (Major Histocompatibility Complex) region on chromosome 6.
+# Genes in this region are excluded due to complex LD structure that confounds colocalization.
+# Source: https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
 MHC <- list(CHR = 6, start = 28510120, end = 33480577)
 
 gene_regions <- do.call(rbind, lapply(genes_common, function(g) as.data.frame(get_gene_region_GRCh38_UKBB(g, WINDOW_SIZE))))
+# Identify genes that fall within the MHC region (to be excluded).
 genes_in_MHC <- genes_common[gene_regions$CHR == MHC$CHR & gene_regions$locus_lower > MHC$start & gene_regions$locus_upper < MHC$end]
+# Identify genes located on the X chromosome (to be excluded).
+# Reason: UKBB LD reference is not available for chromosome X.
 genes_Xchr <- genes_common[gene_regions$CHR == "X"]
 
-filtered_genes <- setdiff(genes_common, genes_in_MHC) # 1132 genes left
-filtered_genes <- setdiff(filtered_genes, genes_Xchr) # 1100 genes left
+# Step 2: Exclude MHC and X chromosome genes from the common gene list.
+filtered_genes <- setdiff(genes_common, genes_in_MHC)  # Remove MHC genes (1132 remaining)
+filtered_genes <- setdiff(filtered_genes, genes_Xchr)  # Remove X chr genes (1100 remaining)
 
-pval_cutoff <- 1e-08
-required_dataset_count <- 4
-
+# Step 3: Further filter to include only genes with at least one significant SNP (p < 1e-8)
 genes_final <- NULL
 for (gene_of_interest in filtered_genes) {
   data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
   data_UKBB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))
   data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS")))
 
+  # check_significant_hits() returns TRUE if there is at least one SNP with p-value < pval_cutoff in the specified dataset and platform
   if (check_significant_hits(data_FinnGen, gene_of_interest, "Olink") &&
     check_significant_hits(data_FinnGen, gene_of_interest, "Somascan") &&
     check_significant_hits(data_UKBB, gene_of_interest, "Olink") &&
@@ -159,51 +174,79 @@ for (gene_of_interest in filtered_genes) {
 print(length(genes_final))
 ```
 
-## Run_colocalization_analysis
+## Run colocalization analysis for each case
+
+- CASE 1: Same ancestry, same platform
+- CASE 2: Finnish data (same ancestry, different platform)
+- CASE 2: British/Irish data (same ancestry, different platform)
+- CASE 3: Different ancestry, same platform (Olink)
+- CASE 4: Different ancestry, same platform (SomaScan)
+
 ```{r}
 for (gene_of_interest in genes_final) {
   # cat("Processing gene:", gene_of_interest, "\n")
-
+  # Load pre-processed pQTL summary statistics for each gene from multiple sources:
+  # - FinnGen (Finnish ancestry)
+  # - UK Biobank (British/Irish ancestry)
+  # - EGA (European ancestry summary-level data)
   data_FinnGen <- readRDS(file.path(BASE_DATA_DIR, "FinnGen", paste0(gene_of_interest, "_processed.RDS")))
   data_UKBB <- readRDS(file.path(BASE_DATA_DIR, "UKBB", paste0(gene_of_interest, "_processed.RDS")))
   data_EGA <- readRDS(file.path(BASE_DATA_DIR, "EGA", paste0(gene_of_interest, "_processed.RDS")))
 
+  # CASE 1: Same ancestry (British/Irish), same platform
+  # Baseline consistency check using data from UK Biobank (Olink vs Olink within-UKBB)
   data_CASE1 <- readRDS(file.path(BASE_DATA_DIR, "CASE1", paste0(gene_of_interest, "_processed.RDS")))
+  # CASE 2: Same ancestry, different platforms
+  # - data_CASE2F: Finnish individuals measured with one platform (e.g., FinnGen)
+  # - data_CASE2B: British/Irish individuals measured with both Olink and SomaScan
   data_CASE2F <- data_FinnGen
   data_CASE2B <- list(
     Olink = data_UKBB$Olink,
     Somascan = data_EGA$Somascan
   )
+  # CASE 3: Different ancestries, same platform (Olink)
+  # Comparing Finnish (FinnGen) and British/Irish (UKBB) Olink-based pQTLs
   data_CASE3 <- list(
     FinnGen = data_FinnGen$Olink,
     UKBB = data_UKBB$Olink
   )
+  # CASE 4: Different ancestries, same platform (SomaScan)
+  # Comparing Finnish (FinnGen) and European (EGA) SomaScan pQTLs
   data_CASE4 <- list(
     FinnGen = data_FinnGen$Somascan,
     EGA = data_EGA$Somascan
   )
-  run_colocalization_analysis("CASE1", gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = "UKBB")
-  run_colocalization_analysis("CASE2F", gene_of_interest, WINDOW_SIZE, data_CASE2F, LD_type = "FinnGen")
-  run_colocalization_analysis("CASE2B", gene_of_interest, WINDOW_SIZE, data_CASE2B, LD_type = "UKBB")
-  run_colocalization_analysis("CASE3", gene_of_interest, WINDOW_SIZE, data_CASE3, LD_type = c("FinnGen", "UKBB"))
-  run_colocalization_analysis("CASE4", gene_of_interest, WINDOW_SIZE, data_CASE4, LD_type = c("FinnGen", "UKBB"))
+
+  # Run colocalization analysis for each case using the appropriate LD reference
+  # - LD_type: either a single LD source (e.g., "UKBB") or a pair (e.g., c("UKBB", "FinnGen"))
+  run_colocalization_analysis("CASE1", gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = "UKBB") # CASE 1: Same ancestry, same platform
+  run_colocalization_analysis("CASE2F", gene_of_interest, WINDOW_SIZE, data_CASE2F, LD_type = "FinnGen") # CASE 2: Finnish data (same ancestry, different platform)
+  run_colocalization_analysis("CASE2B", gene_of_interest, WINDOW_SIZE, data_CASE2B, LD_type = "UKBB") # CASE 2: British/Irish data (same ancestry, different platform)
+  run_colocalization_analysis("CASE3", gene_of_interest, WINDOW_SIZE, data_CASE3, LD_type = c("FinnGen", "UKBB")) # CASE 3: Different ancestry, same platform (Olink)
+  run_colocalization_analysis("CASE4", gene_of_interest, WINDOW_SIZE, data_CASE4, LD_type = c("FinnGen", "UKBB")) # CASE 4: Different ancestry, same platform (SomaScan)
 }
 ```
 
 ## Combine results
 ```{r}
+# Combine colocalization results from all comparison scenarios (CASE1–4),
+# including separate LD reference runs (e.g., CASE3F_LD = Finnish LD, CASE3B_LD = British LD)
 combined <- bind_rows(
-  get_all_results("CASE1"),
-  get_all_results("CASE2B"),
-  get_all_results("CASE2F"),
-  get_all_results("CASE3"),
-  get_all_results("CASE3F_LD"),
-  get_all_results("CASE3B_LD"),
-  get_all_results("CASE4"),
-  get_all_results("CASE4F_LD"),
-  get_all_results("CASE4B_LD")
+  get_all_results("CASE1"),        # Same ancestry, same platform
+  get_all_results("CASE2B"),       # Same ancestry, different platform (British/Irish)
+  get_all_results("CASE2F"),       # Same ancestry, different platform (Finnish)
+  get_all_results("CASE3"),        # Different ancestry (British vs Finnish), Olink
+  get_all_results("CASE3F_LD"),    # Same as CASE3, using Finnish LD
+  get_all_results("CASE3B_LD"),    # Same as CASE3, using British LD
+  get_all_results("CASE4"),        # Different ancestry (European vs Finnish), SomaScan
+  get_all_results("CASE4F_LD"),    # Same as CASE4, using Finnish LD
+  get_all_results("CASE4B_LD")     # Same as CASE4, using British LD
 )
 
+# Define list of colocalization methods and result categories:
+# - C = Colocalized
+# - NC = Not colocalized
+# - IS = Insufficient
 methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
 cat_abbr <- c("C", "NC", "IS")
 colnames(combined) <- c("runID", paste0(rep(methods, rep(3, length(methods))), "-", cat_abbr))
