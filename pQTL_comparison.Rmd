@@ -47,6 +47,8 @@ WINDOW_SIZE <- 50000
 ```
 
 ## Download and process FinnGen summary data
+The pQTL summary statistics used in this study were obtained from the FinnGen Data Freeze 10 release. To download the summary statistics, refer to the official FinnGen portal: https://www.finngen.fi/en/access_results. Specifically, follow the instructions under the section: "How to access the summary statistics"
+
 ```{r}
 # wget https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Olink/probe_map.tsv -O data/FinnGen/pQTL/Olink/probe_map.tsv
 # wget https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Somascan/probe_map.tsv -O data/FinnGen/pQTL/Somascan/probe_map.tsv
