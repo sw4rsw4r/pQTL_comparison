@@ -399,16 +399,22 @@ get_liftOver_hg38Tohg19 <- function(chrom, position) {
   return(as.data.frame(lifted_over)$end)
 }
 
+# Get the LD matrix filename from UKBB that covers the region around the gene of interest.
+# The function searches the LD file list and returns the filename that spans the required region.
 get_ld_path_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
+  # Get the genomic region for the gene in GRCh38 coordinates.
+  # The gene coordinates are first determined in GRCh38, then lifted over to hg19 to match LD file naming.
   region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
 
   hg19_start <- with(region, get_liftOver_hg38Tohg19(CHR, locus_lower))
   hg19_end <- with(region, get_liftOver_hg38Tohg19(CHR, locus_upper))
 
+  # Read list of available LD matrix files
   LD_files <- read.table("data/UKBB/ld_matrix/UKBB_ld_file_list.txt")$V4
   LD_files <- grep(".npz$", LD_files, value = T)
-  LD_words <- strsplit(LD_files, "_")
 
+  # Extract chromosome, start, and end from each filename
+  LD_words <- strsplit(LD_files, "_")
   filename_ld <- tibble(
     filename = LD_files,
     chrom = sub("chr", "", sapply(LD_words, function(x) x[1])),
@@ -419,16 +425,23 @@ get_ld_path_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
       chrom == region$CHR,
       start <= hg19_start
     )
+  # If liftover fails for upper bound, set default region width (2Mb)
   if (length(hg19_end) == 0) hg19_end <- hg19_start + 2e+06
+
+  # Further filter to LD blocks that also cover the upper bound
   out <- filename_ld %>%
     dplyr::filter(
       end >= hg19_end
     ) %>%
     pull(filename) %>%
-    head(1)
+    head(1) # Take the first match
   return(out)
 }
 
+
+# Download the LD matrix files from UKBB LD S3 bucket (hosted by Alkes Group).
+# This uses an anonymous AWS S3 download without credentials.
+# Only files matching the required region prefix are downloaded.
 download_files_LD_UKBB <- function(filepath_ld) {
   dir_LD <- dirname(filepath_ld)
   fname_LD <- sub(".npz", "", basename(filepath_ld))
@@ -455,6 +468,7 @@ load_ld_mat_UKBB <- function(gene_of_interest, WINDOW_SIZE, rsids_to_keep, dir_o
     if (file.exists(fname_save)) {
       mat <- readRDS(fname_save)
     } else {
+      # Convert the LD matrix from .npz to sparse matrix
       np <- reticulate::import("numpy")
       npz_file <- np$load(filepath_ld_mat)
       i <- as.numeric(npz_file$f[["row"]])
@@ -486,6 +500,10 @@ harmonize_ld <- function(ld_mat, ld_merged) {
   return(ld_mat_corrected)
 }
 
+
+# Load or generate the LD matrix from FinnGen for a given gene.
+# This function reads precomputed LD values (in R2) from tabix-indexed files and maps them to rsIDs using metadata.
+# The result is a harmonized LD matrix and associated SNP metadata.
 load_ld_mat_FinnGen <- function(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_output) {
   dir_LD <- "data/FinnGen/ld_matrix/"
   filename_LD <- file.path(dir_output, "LD", "FinnGen", paste0(gene_of_interest, "_LD.RDS"))
@@ -495,10 +513,12 @@ load_ld_mat_FinnGen <- function(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_
   } else {
     region <- get_gene_region_GRCh38_UKBB(gene_of_interest, WINDOW_SIZE)
 
+    # Load LD values (tabix-indexed) for the relevant chromosome
     filename_ld <- paste0(dir_LD, "finngen_r12_chr", region$CHR, "_ld.tsv.gz")
     tabix_file <- TabixFile(filename_ld)
     tabix_out <- scanTabix(tabix_file, param = with(region, GRanges(region$CHR, IRanges(locus_lower, locus_upper))))[[1]]
 
+    # Parse LD data (ID1, ID2, R and R2 values)
     # These IDs are based on GRCh38
     df_LD <- tabix_out %>%
       strsplit("\t") %>%
@@ -508,14 +528,20 @@ load_ld_mat_FinnGen <- function(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_
       mutate(
         R2 = as.numeric(R2)
       )
+
     if (region$CHR == "X") IDs_to_keep <- gsub("chr23", "chrX", IDs_to_keep)
+
+    # Determine which SNP IDs to keep based on intersection
     IDs_final <- Reduce(intersect, list(df_LD$ID1, df_LD$ID2, IDs_to_keep))
+
+    # If no match, try alternate ID format (e.g., swap REF/ALT positions)
     if (length(IDs_final) == 0) {
       IDs_to_keep <- sapply(strsplit(IDs_to_keep, "_"), function(x) paste0(x[1], "_", x[2], "_", x[4], "_", x[3]))
       IDs_final <- Reduce(intersect, list(df_LD$ID1, df_LD$ID2, IDs_to_keep))
     }
     df_LD_filt <- df_LD %>% dplyr::filter(ID1 %in% IDs_final, ID2 %in% IDs_final)
 
+    # Load rsID mapping file
     df_UKBBrsIDmap <- vroom(paste0("data/UKBB/Metadata/SNP_RSID_maps/olink_rsid_map_mac5_info03_b0_7_chr", region$CHR, "_patched_v2.tsv.gz")) %>%
       mutate(
         CHR = sub(":.*", "", ID),
@@ -606,18 +632,22 @@ harmonize <- function(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type, 
       list_LD <- list()
       for (id in names(res)) list_LD[[id]] <- ld_mat_harmonised
     } else {
+      # If two LD panels are specified (i.e., different ancestry for each dataset)
+      # Load LD from FinnGen
       IDs_to_keep <- res[[selected_factor]]$ID
       LD <- load_ld_mat_FinnGen(gene_of_interest, WINDOW_SIZE, IDs_to_keep, dir_output)
       ld_merged <- as_tibble(res[[selected_factor]]) %>% inner_join(LD$meta, by = "snp", suffix = c("_1", "_2"))
       ld_merged <- ld_merged %>% dplyr::filter((effect_1 == effect_2 & other_1 == other_2) | (effect_1 == other_2 & other_1 == effect_2))
-
+      # Load LD from UKBB
       LD2 <- load_ld_mat_UKBB(gene_of_interest, WINDOW_SIZE, rsids_to_keep, dir_output)
       ld_merged2 <- as_tibble(res[[selected_factor]]) %>% inner_join(LD2$meta, by = "snp", suffix = c("_1", "_2"))
       ld_merged2 <- ld_merged2 %>% dplyr::filter((effect_1 == effect_2 & other_1 == other_2) | (effect_1 == other_2 & other_1 == effect_2))
 
+      # Identify SNPs that are present in both LD panels
       ld_merged <- ld_merged %>% dplyr::filter(snp %in% ld_merged2$snp)
       ld_merged2 <- ld_merged2[match(ld_merged$snp, ld_merged2$snp), ]
 
+      # Create separate LD matrices for FinnGen and UKBB using the harmonized SNPs
       list_LD <- list()
       list_LD[["FinnGen"]] <- harmonize_ld(LD$mat[ld_merged$snp, ld_merged$snp], ld_merged)
       list_LD[["UKBB"]] <- harmonize_ld(LD2$mat[ld_merged$snp, ld_merged$snp], ld_merged2)
