@@ -843,7 +843,7 @@ run_colocPropTest <- function(res, dir_results) {
 get_propcoloc_res <- function(dir_results) {
   fname_propcoloc <- file.path(dir_results, "propcoloc", "prop.coloc.RDS")
   res_propcoloc <- "insufficient"
-  p_cond <- LM_cond <- NA
+  p_het <- p_slope <- NA
   if (file.exists(fname_propcoloc)) {
     df_temp <- readRDS(fname_propcoloc)
     p_het <- ifelse(is.logical(df_temp$p_cond) & df_temp$p_cond == F, 1, df_temp$p_cond)

@@ -366,9 +366,6 @@ conda activate pQTL_comparison</code></pre>
 with:</p>
 <pre class="bash"><code>export RETICULATE_PYTHON=~/miniconda3/envs/pQTL_comparison/bin/python</code></pre>
 <pre class="r"><code># Load project-specific functions
-source(&quot;PCA-LIML-function.R&quot;)
-source(&quot;summary_mvMR_BF.R&quot;)
-source(&quot;summary_mvMR_SSS.R&quot;)
 source(&quot;utils.R&quot;)
 
 # devtools::install_github(&quot;ash-res/prop-coloc&quot;)
@@ -391,6 +388,11 @@ BASE_DATA_DIR &lt;- &quot;data/RData&quot;
 WINDOW_SIZE &lt;- 50000</code></pre>
 <div id="download-and-process-finngen-summary-data" class="section level2">
 <h2>Download and process FinnGen summary data</h2>
+<p>The pQTL summary statistics used in this study were obtained from the
+FinnGen Data Freeze 10 release. To download the summary statistics,
+refer to the official FinnGen portal: <a href="https://www.finngen.fi/en/access_results" class="uri">https://www.finngen.fi/en/access_results</a>. Specifically,
+follow the instructions under the section: “How to access the summary
+statistics”</p>
 <pre class="r"><code># wget https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Olink/probe_map.tsv -O data/FinnGen/pQTL/Olink/probe_map.tsv
 # wget https://storage.googleapis.com/finngen-public-data-r10/omics/proteomics/release_2023_03_02/data/Somascan/probe_map.tsv -O data/FinnGen/pQTL/Somascan/probe_map.tsv
 Finn_olink &lt;- read.delim(&quot;data/FinnGen/pQTL/Olink/probe_map.tsv&quot;)
@@ -439,11 +441,14 @@ for (idx in 1:nrow(UKBB_info)) {
 </div>
 <div id="download-and-process-ega-summary-data" class="section level2">
 <h2>Download and process EGA summary data</h2>
-<pre class="r"><code>EGA_info &lt;- read.delim(&quot;data/EGA/PMID29875488_studies_export.tsv&quot;)
-# This file was obtained from the following URL: https://www.ebi.ac.uk/gwas/publications/29875488.
+<pre class="r"><code># This file was obtained from the following URL: https://www.ebi.ac.uk/gwas/publications/29875488.
+EGA_info &lt;- read.delim(&quot;data/EGA/PMID29875488_studies_export.tsv&quot;)
+
+# Example reportedTrait: &quot;Protein levels (XYZ.P12345)&quot; → genename = &quot;XYZ&quot;
 EGA_info &lt;- EGA_info %&gt;%
   mutate(genename = sub(&quot;.*\\(([^.]+)\\..*\\)&quot;, &quot;\\1&quot;, reportedTrait))
 
+# Subset to genes present in both FinnGen and UKBB datasets
 EGA_subset &lt;- EGA_info %&gt;%
   filter(genename %in% intersect(genes_FinnGen, UKBB_info$genename)) %&gt;%
   filter(!duplicated(genename))
@@ -453,6 +458,7 @@ for (idx in 1:nrow(EGA_subset)) {
   filepath_gwas_processed &lt;- file.path(BASE_DATA_DIR, &quot;EGA&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;))
   if (!file.exists(filepath_gwas_processed)) {
     # message(&quot;Processing &quot;, gene_of_interest)
+    # Extract accession ID and summary statistics download URL
     accessionId &lt;- EGA_subset[idx, &quot;accessionId&quot;]
     addr &lt;- EGA_subset[idx, &quot;summaryStatistics&quot;]
     filepath &lt;- paste0(addr, &quot;/harmonised/&quot;, accessionId, &quot;.h.tsv.gz&quot;)
@@ -466,27 +472,42 @@ for (idx in 1:nrow(EGA_subset)) {
 </div>
 <div id="gene-filtering-step" class="section level2">
 <h2>Gene filtering step</h2>
-<pre class="r"><code>genes_common &lt;- Reduce(intersect, list(UKBB_info$genename, EGA_info$genename, genes_FinnGen))
+<ul>
+<li>Step 1: Identify genes that are common across all three
+datasets.</li>
+<li>Step 2: Exclude MHC and X chromosome genes from the common gene
+list.</li>
+<li>Step 3: Further filter to include only genes with at least one
+significant SNP (p &lt; 1e-8)</li>
+</ul>
+<pre class="r"><code># Step 1: Identify genes that are common across all three datasets.
+# Only genes present in all datasets are considered for downstream analysis.
+genes_common &lt;- Reduce(intersect, list(UKBB_info$genename, EGA_info$genename, genes_FinnGen))
 
-# https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
+# Define coordinates of the MHC (Major Histocompatibility Complex) region on chromosome 6.
+# Genes in this region are excluded due to complex LD structure that confounds colocalization.
+# Source: https://www.ncbi.nlm.nih.gov/grc/human/regions/MHC
 MHC &lt;- list(CHR = 6, start = 28510120, end = 33480577)
 
 gene_regions &lt;- do.call(rbind, lapply(genes_common, function(g) as.data.frame(get_gene_region_GRCh38_UKBB(g, WINDOW_SIZE))))
+# Identify genes that fall within the MHC region (to be excluded).
 genes_in_MHC &lt;- genes_common[gene_regions$CHR == MHC$CHR &amp; gene_regions$locus_lower &gt; MHC$start &amp; gene_regions$locus_upper &lt; MHC$end]
+# Identify genes located on the X chromosome (to be excluded).
+# Reason: UKBB LD reference is not available for chromosome X.
 genes_Xchr &lt;- genes_common[gene_regions$CHR == &quot;X&quot;]
 
-filtered_genes &lt;- setdiff(genes_common, genes_in_MHC) # 1132 genes left
-filtered_genes &lt;- setdiff(filtered_genes, genes_Xchr) # 1100 genes left
+# Step 2: Exclude MHC and X chromosome genes from the common gene list.
+filtered_genes &lt;- setdiff(genes_common, genes_in_MHC)  # Remove MHC genes (1132 remaining)
+filtered_genes &lt;- setdiff(filtered_genes, genes_Xchr)  # Remove X chr genes (1100 remaining)
 
-pval_cutoff &lt;- 1e-08
-required_dataset_count &lt;- 4
-
+# Step 3: Further filter to include only genes with at least one significant SNP (p &lt; 1e-8)
 genes_final &lt;- NULL
 for (gene_of_interest in filtered_genes) {
   data_FinnGen &lt;- readRDS(file.path(BASE_DATA_DIR, &quot;FinnGen&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;)))
   data_UKBB &lt;- readRDS(file.path(BASE_DATA_DIR, &quot;UKBB&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;)))
   data_EGA &lt;- readRDS(file.path(BASE_DATA_DIR, &quot;EGA&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;)))
 
+  # check_significant_hits() returns TRUE if there is at least one SNP with p-value &lt; pval_cutoff in the specified dataset and platform
   if (check_significant_hits(data_FinnGen, gene_of_interest, &quot;Olink&quot;) &amp;&amp;
     check_significant_hits(data_FinnGen, gene_of_interest, &quot;Somascan&quot;) &amp;&amp;
     check_significant_hits(data_UKBB, gene_of_interest, &quot;Olink&quot;) &amp;&amp;
@@ -497,50 +518,78 @@ for (gene_of_interest in filtered_genes) {
 print(length(genes_final))</code></pre>
 <pre><code>## [1] 153</code></pre>
 </div>
-<div id="run_colocalization_analysis" class="section level2">
-<h2>Run_colocalization_analysis</h2>
+<div id="run-colocalization-analysis-for-each-case" class="section level2">
+<h2>Run colocalization analysis for each case</h2>
+<ul>
+<li>CASE 1: Same ancestry, same platform</li>
+<li>CASE 2: Finnish data (same ancestry, different platform)</li>
+<li>CASE 2: British/Irish data (same ancestry, different platform)</li>
+<li>CASE 3: Different ancestry, same platform (Olink)</li>
+<li>CASE 4: Different ancestry, same platform (SomaScan)</li>
+</ul>
 <pre class="r"><code>for (gene_of_interest in genes_final) {
   # cat(&quot;Processing gene:&quot;, gene_of_interest, &quot;\n&quot;)
-
+  # Load pre-processed pQTL summary statistics for each gene from multiple sources:
+  # - FinnGen (Finnish ancestry)
+  # - UK Biobank (British/Irish ancestry)
+  # - EGA (European ancestry summary-level data)
   data_FinnGen &lt;- readRDS(file.path(BASE_DATA_DIR, &quot;FinnGen&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;)))
   data_UKBB &lt;- readRDS(file.path(BASE_DATA_DIR, &quot;UKBB&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;)))
   data_EGA &lt;- readRDS(file.path(BASE_DATA_DIR, &quot;EGA&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;)))
 
+  # CASE 1: Same ancestry (British/Irish), same platform
+  # Baseline consistency check using data from UK Biobank (Olink vs Olink within-UKBB)
   data_CASE1 &lt;- readRDS(file.path(BASE_DATA_DIR, &quot;CASE1&quot;, paste0(gene_of_interest, &quot;_processed.RDS&quot;)))
+  # CASE 2: Same ancestry, different platforms
+  # - data_CASE2F: Finnish individuals measured with one platform (e.g., FinnGen)
+  # - data_CASE2B: British/Irish individuals measured with both Olink and SomaScan
   data_CASE2F &lt;- data_FinnGen
   data_CASE2B &lt;- list(
     Olink = data_UKBB$Olink,
     Somascan = data_EGA$Somascan
   )
+  # CASE 3: Different ancestries, same platform (Olink)
+  # Comparing Finnish (FinnGen) and British/Irish (UKBB) Olink-based pQTLs
   data_CASE3 &lt;- list(
     FinnGen = data_FinnGen$Olink,
     UKBB = data_UKBB$Olink
   )
+  # CASE 4: Different ancestries, same platform (SomaScan)
+  # Comparing Finnish (FinnGen) and European (EGA) SomaScan pQTLs
   data_CASE4 &lt;- list(
     FinnGen = data_FinnGen$Somascan,
     EGA = data_EGA$Somascan
   )
-  run_colocalization_analysis(&quot;CASE1&quot;, gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = &quot;UKBB&quot;)
-  run_colocalization_analysis(&quot;CASE2F&quot;, gene_of_interest, WINDOW_SIZE, data_CASE2F, LD_type = &quot;FinnGen&quot;)
-  run_colocalization_analysis(&quot;CASE2B&quot;, gene_of_interest, WINDOW_SIZE, data_CASE2B, LD_type = &quot;UKBB&quot;)
-  run_colocalization_analysis(&quot;CASE3&quot;, gene_of_interest, WINDOW_SIZE, data_CASE3, LD_type = c(&quot;FinnGen&quot;, &quot;UKBB&quot;))
-  run_colocalization_analysis(&quot;CASE4&quot;, gene_of_interest, WINDOW_SIZE, data_CASE4, LD_type = c(&quot;FinnGen&quot;, &quot;UKBB&quot;))
+
+  # Run colocalization analysis for each case using the appropriate LD reference
+  # - LD_type: either a single LD source (e.g., &quot;UKBB&quot;) or a pair (e.g., c(&quot;UKBB&quot;, &quot;FinnGen&quot;))
+  run_colocalization_analysis(&quot;CASE1&quot;, gene_of_interest, WINDOW_SIZE, data_CASE1, LD_type = &quot;UKBB&quot;) # CASE 1: Same ancestry, same platform
+  run_colocalization_analysis(&quot;CASE2F&quot;, gene_of_interest, WINDOW_SIZE, data_CASE2F, LD_type = &quot;FinnGen&quot;) # CASE 2: Finnish data (same ancestry, different platform)
+  run_colocalization_analysis(&quot;CASE2B&quot;, gene_of_interest, WINDOW_SIZE, data_CASE2B, LD_type = &quot;UKBB&quot;) # CASE 2: British/Irish data (same ancestry, different platform)
+  run_colocalization_analysis(&quot;CASE3&quot;, gene_of_interest, WINDOW_SIZE, data_CASE3, LD_type = c(&quot;FinnGen&quot;, &quot;UKBB&quot;)) # CASE 3: Different ancestry, same platform (Olink)
+  run_colocalization_analysis(&quot;CASE4&quot;, gene_of_interest, WINDOW_SIZE, data_CASE4, LD_type = c(&quot;FinnGen&quot;, &quot;UKBB&quot;)) # CASE 4: Different ancestry, same platform (SomaScan)
 }</code></pre>
 </div>
 <div id="combine-results" class="section level2">
 <h2>Combine results</h2>
-<pre class="r"><code>combined &lt;- bind_rows(
-  get_all_results(&quot;CASE1&quot;),
-  get_all_results(&quot;CASE2B&quot;),
-  get_all_results(&quot;CASE2F&quot;),
-  get_all_results(&quot;CASE3&quot;),
-  get_all_results(&quot;CASE3F_LD&quot;),
-  get_all_results(&quot;CASE3B_LD&quot;),
-  get_all_results(&quot;CASE4&quot;),
-  get_all_results(&quot;CASE4F_LD&quot;),
-  get_all_results(&quot;CASE4B_LD&quot;)
+<pre class="r"><code># Combine colocalization results from all comparison scenarios (CASE1–4),
+# including separate LD reference runs (e.g., CASE3F_LD = Finnish LD, CASE3B_LD = British LD)
+combined &lt;- bind_rows(
+  get_all_results(&quot;CASE1&quot;),        # Same ancestry, same platform
+  get_all_results(&quot;CASE2B&quot;),       # Same ancestry, different platform (British/Irish)
+  get_all_results(&quot;CASE2F&quot;),       # Same ancestry, different platform (Finnish)
+  get_all_results(&quot;CASE3&quot;),        # Different ancestry (British vs Finnish), Olink
+  get_all_results(&quot;CASE3F_LD&quot;),    # Same as CASE3, using Finnish LD
+  get_all_results(&quot;CASE3B_LD&quot;),    # Same as CASE3, using British LD
+  get_all_results(&quot;CASE4&quot;),        # Different ancestry (European vs Finnish), SomaScan
+  get_all_results(&quot;CASE4F_LD&quot;),    # Same as CASE4, using Finnish LD
+  get_all_results(&quot;CASE4B_LD&quot;)     # Same as CASE4, using British LD
 )
 
+# Define list of colocalization methods and result categories:
+# - C = Colocalized
+# - NC = Not colocalized
+# - IS = Insufficient
 methods &lt;- c(&quot;coloc&quot;, &quot;susie&quot;, &quot;propcoloc&quot;, &quot;colocPropTest&quot;)
 cat_abbr &lt;- c(&quot;C&quot;, &quot;NC&quot;, &quot;IS&quot;)
 colnames(combined) &lt;- c(&quot;runID&quot;, paste0(rep(methods, rep(3, length(methods))), &quot;-&quot;, cat_abbr))
