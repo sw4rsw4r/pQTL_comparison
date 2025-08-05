@@ -66,13 +66,14 @@ Synapse_download_data <- function() {
   ) %>%
     mutate(genename = sub("_.*", "", name)) %>%
     filter(genename %in% genes_FinnGen, !duplicated(genename))
+  # UKBB_info <- read.delim("UKBB_info.txt")
   return(UKBB_info)
 }
 
 
 get_gene_region_GRCh38_UKBB <- function(gene_of_interest, WINDOW_SIZE) {
   # This file was downloaded from the following URL: https://www.synapse.org/Synapse:syn51396728
-  df_anno <- vroom("data/UKBB/Metadata/Protein_annotation/olink_protein_map_3k_v1.tsv", show_col_types = FALSE)
+  df_anno <- read.delim("data/UKBB/Metadata/Protein_annotation/olink_protein_map_3k_v1.tsv")
 
   if (gene_of_interest == "MYLPF") {
     gene_of_interest0 <- "MYL11"
@@ -912,6 +913,14 @@ get_colocPropTest_res <- function(dir_results) {
 
 
 get_all_results <- function(runID) {
+  methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
+  categories <- c("coloc", "non_coloc", "insufficient")
+  # Define list of colocalization methods and result categories:
+  # - C = Colocalized
+  # - NC = Not colocalized
+  # - IS = Insufficient
+  cat_abbr <- c("C", "NC", "IS")
+
   lst <- list.files(file.path("results", runID))
   merged <- NULL
   for (gene_of_interest in lst) {
@@ -930,16 +939,15 @@ get_all_results <- function(runID) {
     ))
   }
 
-  summary_coloc <- t(data.frame(prop.table(table(factor(merged$coloc, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
-  summary_susie <- t(data.frame(prop.table(table(factor(merged$susie, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
-  summary_propcoloc <- t(data.frame(prop.table(table(factor(merged$propcoloc, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
-  summary_colocPropTest <- t(data.frame(prop.table(table(factor(merged$colocPropTest, levels = c("coloc", "non_coloc", "insufficient"))))))[2, , drop = F]
-  summary_combined <- Reduce("cbind", list(summary_coloc, summary_susie, summary_propcoloc, summary_colocPropTest))
+  summary_list <- lapply(methods, function(method) {
+    out <- round(prop.table(table(factor(merged[[method]], levels = c("coloc", "non_coloc", "insufficient")))), 2)
+    t(as.data.frame(out))[2, , drop = FALSE]
+  })
+  summary_combined <- do.call(cbind, summary_list)
   summary_combined <- data.frame(runID, summary_combined)
 
-  methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
-  categories <- c("coloc", "non_coloc", "insufficient")
-  cat_abbr <- c("C", "NC", "IS")
+  colnames(summary_combined) <- c("runID", paste0(rep(methods, rep(3, length(methods))), "-", cat_abbr))
+  rownames(summary_combined) <- summary_combined$runID
 
   n_methods <- length(methods)
   n_categories <- length(categories)
@@ -962,12 +970,12 @@ get_all_results <- function(runID) {
           match_rate <- mean(merged[[method1]] == cat1 & merged[[method2]] == cat2, na.rm = TRUE)
           row_idx <- (i - 1) * n_categories + k
           col_idx <- (j - 1) * n_categories + l
-          result_table[row_idx, col_idx] <- round(match_rate, 2) # 소수점 3자리로 반올림
+          result_table[row_idx, col_idx] <- round(match_rate, 2)
         }
       }
     }
   }
-  write.table(result_table, paste0("results/", runID, ".txt"), quote = F, row.names = F, col.names = F, sep = "\t")
+  write.table(result_table, paste0("results/", runID, ".txt"), quote = F, row.names = T, col.names = T, sep = "\t")
   return(summary_combined)
 }
 
@@ -1009,4 +1017,118 @@ run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, li
     run_colocPropTest(res, dir_output1)
     run_susie(res, dir_output1)
   }
+}
+
+plot_upset <- function(p_data) {
+  # Define the set columns
+  set_cols <- c("colocPropTest", "prop-coloc", "coloc-SuSiE", "coloc")
+
+  # Generate Upset plots for each runID
+  plots <- p_data %>%
+    split(.$runID) %>%
+    lapply(function(df) {
+      upset(
+        data = df,
+        intersect = set_cols,
+        base_annotations = list(), # Remove default annotations
+        annotations = list(
+          "Intersection size" = intersection_size()
+        ),
+        set_sizes = FALSE, # Explicitly remove Set Size bar
+        n_intersections = 5,
+        sort_sets = FALSE
+      ) + labs(caption = unique(df$runID)) + # Place runID as caption at bottom
+        theme(
+          plot.caption = element_text(hjust = 0.5, size = 10), # Center caption
+          axis.title.x = element_blank() # Remove "group" label from x-axis
+        )
+    })
+  return(plots)
+}
+
+create_input_expanded <- function(input) {
+  # Define the set columns
+  set_cols <- c("colocPropTest", "prop-coloc", "coloc-SuSiE", "coloc")
+
+  # Create input_expanded with proper frequency expansion
+  input_expanded <- input %>%
+    mutate(across(all_of(set_cols), ~ . == 1)) %>% # Convert 0/1 to TRUE/FALSE
+    mutate(freq = round(Percent)) %>% # Calculate frequency (Percent * 10)
+    filter(freq > 0) %>% # Remove rows with zero frequency
+    tidyr::uncount(weights = freq) # Expand rows based on freq
+  return(input_expanded)
+}
+
+
+get_encoded <- function(runID, LD_type) {
+  lst <- list.files(file.path("results", runID))
+  merged <- NULL
+  for (gene_of_interest in lst) {
+    dir_results <- file.path("results", runID, gene_of_interest)
+    res_coloc <- get_coloc_res(dir_results)$coloc
+
+    if (runID %in% c("CASE3", "CASE4") && LD_type == "UKBB") {
+      dir_results1 <- file.path("results", paste0(runID, "B_LD"), gene_of_interest)
+    } else if (runID %in% c("CASE3", "CASE4") && LD_type == "FinnGen") {
+      dir_results1 <- file.path("results", paste0(runID, "F_LD"), gene_of_interest)
+    } else {
+      dir_results1 <- dir_results
+    }
+    res_susie <- get_susie_res(dir_results1)$coloc
+    res_propcoloc <- get_propcoloc_res(dir_results1)$coloc
+    res_colocPropTest <- get_colocPropTest_res(dir_results1)$coloc
+
+    merged <- rbind(merged, data.frame(
+      gene = gene_of_interest,
+      coloc = res_coloc,
+      susie = res_susie,
+      propcoloc = res_propcoloc,
+      colocPropTest = res_colocPropTest
+    ))
+  }
+  # Encoding coloc as 1, non_coloc and insufficient as 0
+  categories <- c("coloc", "non_coloc", "insufficient")
+  my_labels <- c(1, 0, 0)
+
+  for (method in setdiff(colnames(merged), "gene")) {
+    merged[[method]] <- as.numeric(as.character(factor(merged[[method]], levels = categories, labels = my_labels)))
+  }
+
+  methods <- names(merged)[-1]
+  pct <- round(prop.table(table(apply(merged[, -1], 1, paste, collapse = "/"))) * 100, 0)
+  tab_summary <- matrix(nrow = length(pct), ncol = length(methods) + 1)
+
+  for (idx in 1:length(methods)) {
+    tab_summary[, idx] <- sapply(strsplit(names(pct), "/"), function(x) x[idx])
+  }
+  tab_summary[, length(methods) + 1] <- pct
+  colnames(tab_summary) <- c(methods, "Percent")
+  tab_summary <- data.frame(runID, tab_summary)
+  tab_summary$Percent <- as.numeric(tab_summary$Percent)
+  tab_summary <- tab_summary[order(tab_summary$Percent, decreasing = T), ]
+  tab_summary <- tab_summary %>%
+    dplyr::rename(
+      `coloc-SuSiE` = susie,
+      `prop-coloc` = propcoloc
+    )
+  if (LD_type == "FinnGen") {
+    tab_summary <- tab_summary %>%
+      mutate(runID = recode(runID,
+        "CASE1" = "CASE 1",
+        "CASE2B" = "CASE 2-B",
+        "CASE2F" = "CASE 2-F",
+        "CASE3" = "CASE 3-OF",
+        "CASE4" = "CASE 4-SF"
+      ))
+  } else if (LD_type == "UKBB") {
+    tab_summary <- tab_summary %>%
+      mutate(runID = recode(runID,
+        "CASE1" = "CASE 1",
+        "CASE2B" = "CASE 2-B",
+        "CASE2F" = "CASE 2-F",
+        "CASE3" = "CASE 3-OB",
+        "CASE4" = "CASE 4-SB"
+      ))
+  }
+  return(tab_summary)
 }

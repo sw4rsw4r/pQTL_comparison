@@ -152,8 +152,8 @@ genes_in_MHC <- genes_common[gene_regions$CHR == MHC$CHR & gene_regions$locus_lo
 genes_Xchr <- genes_common[gene_regions$CHR == "X"]
 
 # Step 2: Exclude MHC and X chromosome genes from the common gene list.
-filtered_genes <- setdiff(genes_common, genes_in_MHC)  # Remove MHC genes (1132 remaining)
-filtered_genes <- setdiff(filtered_genes, genes_Xchr)  # Remove X chr genes (1100 remaining)
+filtered_genes <- setdiff(genes_common, genes_in_MHC) # Remove MHC genes (1132 remaining)
+filtered_genes <- setdiff(filtered_genes, genes_Xchr) # Remove X chr genes (1100 remaining)
 
 # Step 3: Further filter to include only genes with at least one significant SNP (p < 1e-8)
 genes_final <- NULL
@@ -230,26 +230,41 @@ for (gene_of_interest in genes_final) {
 ```{r}
 # Combine colocalization results from all comparison scenarios (CASE1–4),
 # including separate LD reference runs (e.g., CASE3F_LD = Finnish LD, CASE3B_LD = British LD)
-combined <- bind_rows(
-  get_all_results("CASE1"),        # Same ancestry, same platform
-  get_all_results("CASE2B"),       # Same ancestry, different platform (British/Irish)
-  get_all_results("CASE2F"),       # Same ancestry, different platform (Finnish)
-  get_all_results("CASE3"),        # Different ancestry (British vs Finnish), Olink
-  get_all_results("CASE3F_LD"),    # Same as CASE3, using Finnish LD
-  get_all_results("CASE3B_LD"),    # Same as CASE3, using British LD
-  get_all_results("CASE4"),        # Different ancestry (European vs Finnish), SomaScan
-  get_all_results("CASE4F_LD"),    # Same as CASE4, using Finnish LD
-  get_all_results("CASE4B_LD")     # Same as CASE4, using British LD
-)
+runIDs <- c("CASE1", "CASE2B", "CASE2F", "CASE3", "CASE3F_LD", "CASE3B_LD", "CASE4", "CASE4F_LD", "CASE4B_LD")
+runIDs_rename <- c("CASE 1", "CASE 2-B", "CASE 2-F", "CASE 3-OM", "CASE 3-OF", "CASE 3-OB", "CASE 4-SM", "CASE 4-SF", "CASE 4-SB")
 
-# Define list of colocalization methods and result categories:
-# - C = Colocalized
-# - NC = Not colocalized
-# - IS = Insufficient
-methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
-cat_abbr <- c("C", "NC", "IS")
-colnames(combined) <- c("runID", paste0(rep(methods, rep(3, length(methods))), "-", cat_abbr))
-rownames(combined) <- NULL
+combined <- bind_rows(lapply(runIDs, get_all_results))
+rownames(combined) <- runIDs_rename
+combined$runID <- NULL
 print(combined)
-write.table(combined, "results/combined.txt", quote = F, row.names = F, col.names = T, sep = "\t")
+write.table(combined, "results/tab_combined_prop.txt", quote = F, row.names = F, col.names = T, sep = "\t")
+```
+
+
+```{r}
+library(ComplexUpset)
+library(patchwork)
+LD_types <- c("FinnGen", "UKBB")
+runIDs_filtered <- grep("_LD", runIDs, invert = TRUE, value = TRUE)
+
+encoded <- lapply(LD_types, function(this_LD) {
+  do.call(rbind, lapply(runIDs_filtered, function(id) {
+    get_encoded(id, LD_type = this_LD)
+  }))
+})
+names(encoded) <- LD_types
+
+input_expanded1 <- create_input_expanded(encoded[["FinnGen"]]) %>% filter(runID %in% c("CASE 1", "CASE 2-B", "CASE 2-F"))
+input_expanded2 <- create_input_expanded(encoded[["FinnGen"]]) %>% filter(runID %in% c("CASE 3-OF", "CASE 4-SF"))
+input_expanded3 <- create_input_expanded(encoded[["UKBB"]]) %>% filter(runID %in% c("CASE 3-OB", "CASE 4-SB"))
+
+pdf("results/fig_upset.pdf", width = 12, height = 12)
+p <- patchwork::wrap_plots(c(
+  plot_upset(input_expanded1),
+  plot_upset(input_expanded2),
+  list(ggplot()),
+  plot_upset(input_expanded3)
+), ncol = 3, nrow = 3)
+plot(p)
+dev.off()
 ```
