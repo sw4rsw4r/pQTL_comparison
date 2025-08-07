@@ -228,6 +228,7 @@ for (gene_of_interest in genes_final) {
 
 ## Combine results
 ```{r}
+library(knitr)
 # Combine colocalization results from all comparison scenarios (CASE1–4),
 # including separate LD reference runs (e.g., CASE3F_LD = Finnish LD, CASE3B_LD = British LD)
 runIDs <- c("CASE1", "CASE2B", "CASE2F", "CASE3", "CASE3F_LD", "CASE3B_LD", "CASE4", "CASE4F_LD", "CASE4B_LD")
@@ -236,12 +237,12 @@ runIDs_rename <- c("CASE 1", "CASE 2-B", "CASE 2-F", "CASE 3-OM", "CASE 3-OF", "
 combined <- bind_rows(lapply(runIDs, get_all_results))
 rownames(combined) <- runIDs_rename
 combined$runID <- NULL
-print(combined)
-write.table(combined, "results/tab_combined_prop.txt", quote = F, row.names = F, col.names = T, sep = "\t")
+kable(combined)
+write.table(combined, "results/tab_combined_prop_test.txt", quote = F, row.names = T, col.names = T, sep = "\t")
 ```
 
 
-```{r}
+```{r, fig.width=12, fig.height=12}
 library(ComplexUpset)
 library(patchwork)
 LD_types <- c("FinnGen", "UKBB")
@@ -258,7 +259,7 @@ input_expanded1 <- create_input_expanded(encoded[["FinnGen"]]) %>% filter(runID 
 input_expanded2 <- create_input_expanded(encoded[["FinnGen"]]) %>% filter(runID %in% c("CASE 3-OF", "CASE 4-SF"))
 input_expanded3 <- create_input_expanded(encoded[["UKBB"]]) %>% filter(runID %in% c("CASE 3-OB", "CASE 4-SB"))
 
-pdf("results/fig_upset.pdf", width = 12, height = 12)
+# pdf("results/fig_upset.pdf", width = 12, height = 12)
 p <- patchwork::wrap_plots(c(
   plot_upset(input_expanded1),
   plot_upset(input_expanded2),
@@ -266,5 +267,5 @@ p <- patchwork::wrap_plots(c(
   plot_upset(input_expanded3)
 ), ncol = 3, nrow = 3)
 plot(p)
-dev.off()
+# dev.off()
 ```
