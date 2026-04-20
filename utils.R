@@ -843,7 +843,7 @@ get_susie_res <- function(dir_results) {
     )
 
     res_susie <- ifelse(any(res_temp$H4 >= 0.5), "coloc",
-      ifelse(all(res_temp$H4 < 0.5) && any(res_temp$H3 >= 0.5), "non_coloc", "insufficient")
+      ifelse(all(res_temp$H4 < 0.8) && any(res_temp$H3 >= 0.8), "non_coloc", "insufficient")
     )
     max_H3 <- res_temp$H3[which.max(res_temp$H4)]
     max_H4 <- max(res_temp$H4)
@@ -859,7 +859,7 @@ get_coloc_res <- function(dir_results) {
     res_temp <- as.data.frame(t(read.delim(fname_coloc)))
     res_coloc <- with(
       res_temp,
-      ifelse(PP.H4.abf >= 0.5, "coloc", ifelse(PP.H3.abf >= 0.5, "non_coloc", "insufficient"))
+      ifelse(PP.H4.abf >= 0.8, "coloc", ifelse(PP.H3.abf >= 0.8, "non_coloc", "insufficient"))
     )
     H3 <- res_temp$PP.H3.abf
     H4 <- res_temp$PP.H4.abf
