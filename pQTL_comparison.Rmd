@@ -26,8 +26,7 @@ export RETICULATE_PYTHON=~/miniconda3/envs/pQTL_comparison/bin/python
 # Load project-specific functions
 source("utils.R")
 
-# devtools::install_github("ash-res/prop-coloc")
-devtools::install_github("ash-res/prop-coloc@cd00a469fc1149709db8960e0d722d9df6eb9e03", force = TRUE)
+# devtools::install_github("ash-res/prop-coloc@cd00a469fc1149709db8960e0d722d9df6eb9e03", force = TRUE)
 # install.packages("colocPropTest", dependencies = T)
 suppressMessages(library(colocPropTest))
 # devtools::install_github("kassambara/easyGgplot2")

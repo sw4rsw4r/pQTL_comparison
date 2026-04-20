@@ -1123,24 +1123,17 @@ run_sharepro <- function(res, dir_results) {
   write.table(input2, fname_input2, sep = "\t", quote = F, row.names = F, col.names = T)
   write.table(LD, fname_ld, sep = "\t", quote = F, row.names = F, col.names = F)
 
-  fname_output1 <- file.path(dir_results, "sharepro", "res.sharepro1.txt")
-  cmd1 <- paste0(
+  fname_output <- file.path(dir_results, "sharepro", "res")
+  cmd <- paste0(
     "~/miniconda3/envs/pQTL_comparison/bin/python ", PATH_sharepro_git, "/src/SharePro/sharepro_coloc.py --z ", fname_input1, " ", fname_input2,
-    " --ld ", fname_ld, " --save ", fname_output1, " --K 10 --sigma 1e-10"
+    " --ld ", fname_ld, " --save ", fname_output, " --K 10"
   )
-  fname_output2 <- file.path(dir_results, "sharepro", "res.sharepro2.txt")
-  cmd2 <- paste0(
-    "~/miniconda3/envs/pQTL_comparison/bin/python ", PATH_sharepro_git, "/src/SharePro/sharepro_coloc.py --z ", fname_input1, " ", fname_input2,
-    " --ld ", fname_ld, " --save ", fname_output2, " --K 10 --sigma 1e-20"
-  )
-
-  system(cmd1)
-  system(cmd2)
+  system(cmd)
 }
 
 
 get_sharepro <- function(dir_results) {
-  fname_sharepro <- file.path(dir_results, "sharepro", "res.sharepro.txt.sharepro.txt")
+  fname_sharepro <- file.path(dir_results, "sharepro", "res.sharepro.txt")
   res_sharepro <- "insufficient"
   if (file.exists(fname_sharepro)) {
     res_temp <- as.data.frame(read.delim(fname_sharepro))
