@@ -16,6 +16,8 @@ suppressMessages(library(combinat))
 suppressMessages(library(hash))
 suppressMessages(library(jsonlite))
 
+PATH_sharepro_git <- "~/projects/git/SharePro_coloc/"
+
 ensure_dir <- function(dirpath) {
   if (!file.exists(dirpath)) {
     dir.create(dirpath, recursive = T)
@@ -880,7 +882,7 @@ get_colocPropTest_res <- function(dir_results) {
 
 
 get_all_results <- function(runID) {
-  methods <- c("coloc", "susie", "propcoloc", "colocPropTest")
+  methods <- c("coloc", "susie", "sharepro", "propcoloc", "colocPropTest")
   categories <- c("coloc", "non_coloc", "insufficient")
   # Define list of colocalization methods and result categories:
   # - C = Colocalized
@@ -957,6 +959,7 @@ run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, li
     run_susie(res, dir_output) # SuSiE uses LD, per dataset
     run_propcoloc(res, dir_output) # propcoloc uses one shared LD
     run_colocPropTest(res, dir_output) # colocPropTest uses one shared LD
+    run_sharepro(res, dir_output)
   } else if (length(LD_type) == 2) {
     # propcoloc and colocPropTest only support a single LD matrix, so run twice:
     # once with UKBB LD and once with FinnGen LD
@@ -974,6 +977,7 @@ run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, li
     run_propcoloc(res, dir_output0)
     run_colocPropTest(res, dir_output0)
     run_susie(res, dir_output0)
+    run_sharepro(res, dir_output0)
 
     # Run propcoloc and colocPropTest using FinnGen LD for both datasets
     # Also re-run susie for consistency
@@ -983,6 +987,7 @@ run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, li
     run_propcoloc(res, dir_output1)
     run_colocPropTest(res, dir_output1)
     run_susie(res, dir_output1)
+    run_sharepro(res, dir_output1)
   }
 }
 
@@ -1098,4 +1103,51 @@ get_encoded <- function(runID, LD_type) {
       ))
   }
   return(tab_summary)
+}
+
+
+
+run_sharepro <- function(res, dir_results) {
+  RF1 <- res$names$risk_factors[1]
+  RF2 <- res$names$risk_factors[2]
+  fname_input1 <- file.path(dir_results, "sharepro", "input_summary1.txt")
+  fname_input2 <- file.path(dir_results, "sharepro", "input_summary2.txt")
+  fname_ld <- file.path(dir_results, "sharepro", "input_ld.txt")
+  ensure_dir(dirname(fname_ld))
+
+  LD <- res[[RF1]]$LD
+  input1 <- with(res[[RF1]], data.frame(SNP = snp, A1 = effect, A2 = other, EAF = effect_AF, BETA = beta, SE = se, P = pval, N))
+  input2 <- with(res[[RF2]], data.frame(SNP = snp, A1 = effect, A2 = other, EAF = effect_AF, BETA = beta, SE = se, P = pval, N))
+
+  write.table(input1, fname_input1, sep = "\t", quote = F, row.names = F, col.names = T)
+  write.table(input2, fname_input2, sep = "\t", quote = F, row.names = F, col.names = T)
+  write.table(LD, fname_ld, sep = "\t", quote = F, row.names = F, col.names = F)
+
+  fname_output1 <- file.path(dir_results, "sharepro", "res.sharepro1.txt")
+  cmd1 <- paste0(
+    "~/miniconda3/envs/pQTL_comparison/bin/python ", PATH_sharepro_git, "/src/SharePro/sharepro_coloc.py --z ", fname_input1, " ", fname_input2,
+    " --ld ", fname_ld, " --save ", fname_output1, " --K 10 --sigma 1e-10"
+  )
+  fname_output2 <- file.path(dir_results, "sharepro", "res.sharepro2.txt")
+  cmd2 <- paste0(
+    "~/miniconda3/envs/pQTL_comparison/bin/python ", PATH_sharepro_git, "/src/SharePro/sharepro_coloc.py --z ", fname_input1, " ", fname_input2,
+    " --ld ", fname_ld, " --save ", fname_output2, " --K 10 --sigma 1e-20"
+  )
+
+  system(cmd1)
+  system(cmd2)
+}
+
+
+get_sharepro <- function(dir_results) {
+  fname_sharepro <- file.path(dir_results, "sharepro", "res.sharepro.txt.sharepro.txt")
+  res_sharepro <- "insufficient"
+  if (file.exists(fname_sharepro)) {
+    res_temp <- as.data.frame(read.delim(fname_sharepro))
+    res_sharepro <- with(
+      res_temp,
+      ifelse(max(share) >= 0.8, "coloc", "non_coloc")
+    )
+  }
+  return(list(coloc = res_sharepro))
 }
