@@ -671,68 +671,35 @@ harmonize <- function(runID, gene_of_interest, WINDOW_SIZE, list_data, LD_type, 
 }
 
 
-run_propcoloc <- function(res, dir_results, this_J = 10) {
+run_propcoloc <- function(res, dir_results, this_J = 10, prune = 0.6) {
   RF1 <- res$names$risk_factors[1]
   RF2 <- res$names$risk_factors[2]
 
-  fname_prop.coloc.res1 <- file.path(dir_results, "propcoloc", "prop.coloc.RDS")
-  fname_prop.coloc.res2 <- file.path(dir_results, "propcoloc", "prop.coloc.txt")
-  ensure_dir(dirname(fname_prop.coloc.res1))
-  # if (file.exists(fname_prop.coloc.res1) & file.exists(fname_prop.coloc.res2)) {
-  #   return()
-  # }
+  fname_prop.coloc.res <- file.path(dir_results, "propcoloc", "prop.coloc.txt")
+  ensure_dir(dirname(fname_prop.coloc.res))
 
-  prop.coloc.res <- NULL
-  prune_values <- c(0.4, 0.3, 0.2, 0.1, 0.01, 0.001, 0.0001, 0.00001)
-  current_prune_index <- 1
-  while (is.null(prop.coloc.res) && current_prune_index <= length(prune_values)) {
-    this_prune <- prune_values[current_prune_index]
-    prop.coloc.res <- tryCatch(
-      {
-        prop.coloc::prop.coloc(
-          b1 = res[[RF1]]$beta, se1 = res[[RF1]]$se, b2 = res[[RF2]]$beta, se2 = res[[RF2]]$se,
-          n = c(res[[RF1]]$N, res[[RF2]]$N),
-          ld = res[[RF1]]$LD, figs = TRUE, traits = c(RF1, RF2),
-          prune = this_prune, J = this_J
-        )
-      },
-      error = function(e) {
-        return(NULL)
-      }
-    )
-    if (is.null(prop.coloc.res)) {
-      current_prune_index <- current_prune_index + 1
-    } else {
-      break
-    }
-  }
-  if (is.null(prop.coloc.res)) prop.coloc.res <- list(p_full = NA, p_cond = NA, LM_full = NA, LM_cond = NA)
-
+  this_prune <- prune
   prop.coloc.res <- tryCatch(
     {
-      prop.coloc::prop.coloc(
+      prop.coloc_temp <- prop.coloc::prop.coloc(
         b1 = res[[RF1]]$beta, se1 = res[[RF1]]$se, b2 = res[[RF2]]$beta, se2 = res[[RF2]]$se,
         n = c(res[[RF1]]$N, res[[RF2]]$N),
         ld = res[[RF1]]$LD, figs = F, traits = c(RF1, RF2),
-        prune = this_prune, J = this_J
+        clump = this_prune, J = this_J
       )
+      prop.coloc_temp <- as.data.frame(prop.coloc_temp[sapply(prop.coloc_temp, length) == 1])
     },
     error = function(cond) {
-      writeLines(capture.output(cond), paste0(fname_prop.coloc.res2, "_err"))
-      return(cond)
+      writeLines(capture.output(cond), paste0(fname_prop.coloc.res, "_err"))
+      prop.coloc.res <- data.frame(p_cond = NA, eta_cond = NA, p_eta = NA, p_full = NA, eta_full = NA, p_naive = NA, convergence = NA)
     }
   )
-  if (any(class(prop.coloc.res) == "error")) {
-    return()
-  }
-
+  if (!("top" %in% names(prop.coloc.res))) prop.coloc.res$top <- NA
   prop.coloc.res$J <- this_J
-  prop.coloc.res$prune <- this_prune
-  prop.coloc.res$rsIDs <- res[[1]]$snp
+  prop.coloc.res$clump <- this_prune
 
-  saveRDS(prop.coloc.res, file = fname_prop.coloc.res1)
-  write.table(as.data.frame(prop.coloc.res[sapply(prop.coloc.res, length) == 1]),
-    fname_prop.coloc.res2,
+  write.table(prop.coloc.res,
+    fname_prop.coloc.res,
     quote = F, row.names = F, col.names = T, sep = "\t"
   )
 }
@@ -840,19 +807,19 @@ run_colocPropTest <- function(res, dir_results) {
 
 
 get_propcoloc_res <- function(dir_results) {
-  fname_propcoloc <- file.path(dir_results, "propcoloc", "prop.coloc.RDS")
+  fname_propcoloc <- file.path(dir_results, "propcoloc", "prop.coloc.txt")
   res_propcoloc <- "insufficient"
   p_het <- p_slope <- NA
   if (file.exists(fname_propcoloc)) {
-    df_temp <- readRDS(fname_propcoloc)
+    df_temp <- read.delim(fname_propcoloc)
     p_het <- ifelse(is.logical(df_temp$p_cond) & df_temp$p_cond == F, 1, df_temp$p_cond)
-    p_slope <- ifelse(is.logical(df_temp$LM_cond) & df_temp$LM_cond == F, 1, df_temp$LM_cond)
+    p_slope <- ifelse(is.logical(df_temp$p_eta) & df_temp$p_eta == F, 1, df_temp$p_eta)
     res_propcoloc <- ifelse(is.na(p_slope) | p_slope > 0.05, "insufficient",
       ifelse(p_het > 0.05, "coloc", "non_coloc")
     )
   }
 
-  return(list(coloc = res_propcoloc, p_cond = p_het, LM_cond = p_slope))
+  return(list(coloc = res_propcoloc, p_cond = p_het, p_eta = p_slope))
 }
 
 
