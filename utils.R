@@ -16,7 +16,7 @@ suppressMessages(library(combinat))
 suppressMessages(library(hash))
 suppressMessages(library(jsonlite))
 
-PATH_sharepro_git <- "~/projects/git/SharePro_coloc/"
+PATH_sharepro_git <- "~/Desktop/projects/git/SharePro_coloc/"
 
 ensure_dir <- function(dirpath) {
   if (!file.exists(dirpath)) {
@@ -679,7 +679,9 @@ run_propcoloc <- function(res, dir_results, this_J = 10, prune = 0.6) {
 
   fname_prop.coloc.res <- file.path(dir_results, "propcoloc", "prop.coloc.txt")
   ensure_dir(dirname(fname_prop.coloc.res))
-
+  if (file.exists(fname_prop.coloc.res)) {
+    return()
+  }
   this_prune <- prune
   prop.coloc.res <- tryCatch(
     {
@@ -713,9 +715,9 @@ run_coloc <- function(res, dir_results) {
   fname_output1 <- file.path(dir_results, "coloc", "coloc_sensitivity.pdf")
   fname_output2 <- file.path(dir_results, "coloc", "coloc.txt")
   ensure_dir(dirname(fname_output1))
-  # if (file.exists(fname_output1) & file.exists(fname_output2)) {
-  #   return()
-  # }
+  if (file.exists(fname_output1) & file.exists(fname_output2)) {
+    return()
+  }
   res[[RF1]]$MAF <- with(res[[RF1]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
   res[[RF2]]$MAF <- with(res[[RF2]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
   res[[RF1]]$MAF <- with(res[[RF1]], ifelse(MAF == 0, 1 / res[[RF1]]$N, MAF))
@@ -744,9 +746,9 @@ run_susie <- function(res, dir_results) {
   fname_output1 <- file.path(dir_results, "susie", "susie.txt")
   fname_output2 <- file.path(dir_results, "susie", "susie_sensitivity.pdf")
   ensure_dir(dirname(fname_output1))
-  # if (file.exists(fname_output1) & file.exists(fname_output2)) {
-  #   return()
-  # }
+  if (file.exists(fname_output1) & file.exists(fname_output1)) {
+    return()
+  }
   res[[RF1]]$MAF <- with(res[[RF1]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
   res[[RF2]]$MAF <- with(res[[RF2]], ifelse(effect_AF < .5, effect_AF, 1 - effect_AF))
   res[[RF1]]$MAF <- with(res[[RF1]], ifelse(MAF == 0, 1 / res[[RF1]]$N, MAF))
@@ -794,9 +796,9 @@ run_colocPropTest <- function(res, dir_results) {
 
   fname_output <- file.path(dir_results, "colocPropTest", "colocPropTest.txt")
   ensure_dir(dirname(fname_output))
-  # if (file.exists(fname_output)) {
-  #   return()
-  # }
+  if (file.exists(fname_output)) {
+    return()
+  }
   if (length(res[[1]]$snp) > 2) {
     res_proptests <- run_proptests(res[[RF1]], res[[RF2]], LD = res[[RF1]]$LD)
     write.table(res_proptests,
@@ -1113,6 +1115,10 @@ run_sharepro <- function(res, dir_results) {
   fname_input1 <- file.path(dir_results, "sharepro", "input_summary1.txt")
   fname_input2 <- file.path(dir_results, "sharepro", "input_summary2.txt")
   fname_ld <- file.path(dir_results, "sharepro", "input_ld.txt")
+  fname_output <- file.path(dir_results, "sharepro", "res")
+  if (file.exists(fname_output)) {
+    return()
+  }
   ensure_dir(dirname(fname_ld))
 
   LD <- res[[RF1]]$LD
@@ -1123,7 +1129,7 @@ run_sharepro <- function(res, dir_results) {
   write.table(input2, fname_input2, sep = "\t", quote = F, row.names = F, col.names = T)
   write.table(LD, fname_ld, sep = "\t", quote = F, row.names = F, col.names = F)
 
-  fname_output <- file.path(dir_results, "sharepro", "res")
+  
   cmd <- paste0(
     "~/miniconda3/envs/pQTL_comparison/bin/python ", PATH_sharepro_git, "/src/SharePro/sharepro_coloc.py --z ", fname_input1, " ", fname_input2,
     " --ld ", fname_ld, " --save ", fname_output, " --K 10"

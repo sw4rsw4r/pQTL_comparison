@@ -182,6 +182,7 @@ print(length(genes_final))
 
 ```{r}
 for (gene_of_interest in genes_final) {
+  print(gene_of_interest)
   # cat("Processing gene:", gene_of_interest, "\n")
   # Load pre-processed pQTL summary statistics for each gene from multiple sources:
   # - FinnGen (Finnish ancestry)
