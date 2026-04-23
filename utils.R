@@ -679,9 +679,9 @@ run_propcoloc <- function(res, dir_results, this_J = 10, prune = 0.6) {
 
   fname_prop.coloc.res <- file.path(dir_results, "propcoloc", "prop.coloc.txt")
   ensure_dir(dirname(fname_prop.coloc.res))
-  if (file.exists(fname_prop.coloc.res)) {
-    return()
-  }
+  # if (file.exists(fname_prop.coloc.res)) {
+  #   return()
+  # }
   this_prune <- prune
   prop.coloc.res <- tryCatch(
     {
@@ -691,7 +691,7 @@ run_propcoloc <- function(res, dir_results, this_J = 10, prune = 0.6) {
         ld = res[[RF1]]$LD, figs = F, traits = c(RF1, RF2),
         clump = this_prune, J = this_J
       )
-      prop.coloc_temp <- as.data.frame(prop.coloc_temp[sapply(prop.coloc_temp, length) == 1])
+      as.data.frame(prop.coloc_temp[sapply(prop.coloc_temp, length) == 1])
     },
     error = function(cond) {
       writeLines(capture.output(cond), paste0(fname_prop.coloc.res, "_err"))
@@ -844,7 +844,7 @@ get_susie_res <- function(dir_results) {
       )
     )
 
-    res_susie <- ifelse(any(res_temp$H4 >= 0.5), "coloc",
+    res_susie <- ifelse(any(res_temp$H4 >= 0.8), "coloc",
       ifelse(all(res_temp$H4 < 0.8) && any(res_temp$H3 >= 0.8), "non_coloc", "insufficient")
     )
     max_H3 <- res_temp$H3[which.max(res_temp$H4)]
@@ -900,13 +900,15 @@ get_all_results <- function(runID) {
     res_susie <- get_susie_res(dir_results)$coloc
     res_coloc <- get_coloc_res(dir_results)$coloc
     res_colocPropTest <- get_colocPropTest_res(dir_results)$coloc
+    res_sharepro <- get_sharepro(dir_results)$coloc
 
     merged <- rbind(merged, data.frame(
       gene = gene_of_interest,
       propcoloc = res_propcoloc,
       coloc = res_coloc,
       susie = res_susie,
-      colocPropTest = res_colocPropTest
+      colocPropTest = res_colocPropTest,
+      sharepro = res_sharepro
     ))
   }
 
