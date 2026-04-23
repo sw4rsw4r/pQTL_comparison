@@ -997,7 +997,7 @@ run_colocalization_analysis <- function(runID, gene_of_interest, WINDOW_SIZE, li
 
 plot_upset <- function(p_data) {
   # Define the set columns
-  set_cols <- c("colocPropTest", "prop-coloc", "coloc-SuSiE", "coloc")
+  set_cols <- c("colocPropTest", "prop-coloc", "sharepro", "coloc-SuSiE", "coloc")
 
   # Generate Upset plots for each runID
   plots <- p_data %>%
@@ -1024,7 +1024,7 @@ plot_upset <- function(p_data) {
 
 create_input_expanded <- function(input) {
   # Define the set columns
-  set_cols <- c("colocPropTest", "prop-coloc", "coloc-SuSiE", "coloc")
+  set_cols <- c("colocPropTest", "prop-coloc", "sharepro", "coloc-SuSiE", "coloc")
 
   # Create input_expanded with proper frequency expansion
   input_expanded <- input %>%
@@ -1053,13 +1053,15 @@ get_encoded <- function(runID, LD_type) {
     res_susie <- get_susie_res(dir_results1)$coloc
     res_propcoloc <- get_propcoloc_res(dir_results1)$coloc
     res_colocPropTest <- get_colocPropTest_res(dir_results1)$coloc
+    res_sharepro <- get_sharepro(dir_results1)$coloc
 
     merged <- rbind(merged, data.frame(
       gene = gene_of_interest,
       coloc = res_coloc,
       susie = res_susie,
       propcoloc = res_propcoloc,
-      colocPropTest = res_colocPropTest
+      colocPropTest = res_colocPropTest,
+      sharepro = res_sharepro
     ))
   }
   # Encoding coloc as 1, non_coloc and insufficient as 0
