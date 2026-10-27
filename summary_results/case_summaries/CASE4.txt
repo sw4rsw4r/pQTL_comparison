@@ -1,0 +1,16 @@
+coloc.C	coloc.NC	coloc.IS	susie.C	susie.NC	susie.IS	sharepro.C	sharepro.NC	sharepro.IS	propcoloc.C	propcoloc.NC	propcoloc.IS	colocPropTest.C	colocPropTest.NC	colocPropTest.IS
+coloc.C	0.75	0	0	0.48	0.13	0.13	0	0	0.75	0	0	0.75	0	0	0.75
+coloc.NC	0	0.17	0	0.13	0.03	0.01	0	0	0.17	0	0	0.17	0	0	0.17
+coloc.IS	0	0	0.08	0.03	0.04	0.02	0	0	0.08	0	0	0.08	0	0	0.08
+susie.C	0.48	0.13	0.03	0.64	0	0	0	0	0.64	0	0	0.64	0	0	0.64
+susie.NC	0.13	0.03	0.04	0	0.2	0	0	0	0.2	0	0	0.2	0	0	0.2
+susie.IS	0.13	0.01	0.02	0	0	0.16	0	0	0.16	0	0	0.16	0	0	0.16
+sharepro.C	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+sharepro.NC	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+sharepro.IS	0.75	0.17	0.08	0.64	0.2	0.16	0	0	1	0	0	1	0	0	1
+propcoloc.C	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+propcoloc.NC	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+propcoloc.IS	0.75	0.17	0.08	0.64	0.2	0.16	0	0	1	0	0	1	0	0	1
+colocPropTest.C	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+colocPropTest.NC	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+colocPropTest.IS	0.75	0.17	0.08	0.64	0.2	0.16	0	0	1	0	0	1	0	0	1

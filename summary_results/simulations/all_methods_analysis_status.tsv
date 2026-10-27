@@ -1,0 +1,6 @@
+method	declaration_rule	insufficient_or_error_n	method_error_n
+SharePro	maximum SharePro sharing probability >= 0.8	0	0
+coloc	PP.H4.abf >= 0.8	38	0
+coloc-SuSiE	any signal-pair PP.H4.abf >= 0.8	41	0
+prop-coloc	p_eta <= 0.05 and p_cond > 0.05	2371	21
+colocPropTest	minimum FDR > 0.05	0	0
